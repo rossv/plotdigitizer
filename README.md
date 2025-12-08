@@ -1,2 +1,22 @@
-# plotdigitizer
-For digitizing plots found in PDFs or images and returning tabular data.
+# Plot Digitizer (React)
+
+A simple web-based digitizer that lets you load a plot image, calibrate the axes, and record multiple series of digitized data points.
+
+## Getting started
+
+```bash
+npm install
+npm run dev
+```
+
+Then open the printed local URL in your browser.
+
+## How to use
+
+1. **Load an image** of your chart using the file picker.
+2. **Calibrate the X axis** by selecting two points on the image and entering their real-world values.
+3. **Calibrate the Y axis** (per series) the same way. Toggle linear/log scaling as needed.
+4. Click **Start Digitizing** to add points; each click records pixel and calibrated data coordinates for the active series.
+5. Add more series from the sidebar; each series maintains its own Y-axis calibration and color.
+
+Mouse wheel zoom and drag-to-pan make it easy to focus on your plot while digitizing.
