@@ -11,6 +11,19 @@ npm run dev
 
 Then open the printed local URL in your browser.
 
+## Deployment
+
+The app's asset base path is configurable so it works on both root-domain and subpath deployments.
+
+- By default, builds use the root path `/`.
+- To deploy under a subpath (for example GitHub Pages at `/plotdigitizer/`), set either `VITE_BASE_PATH` or `BASE_URL` before building:
+
+```bash
+BASE_URL=/plotdigitizer/ npm run build
+```
+
+The GitHub Pages workflow in this repo sets the value automatically when building for that environment.
+
 ## How to use
 
 1. **Load an image** of your chart using the file picker.
