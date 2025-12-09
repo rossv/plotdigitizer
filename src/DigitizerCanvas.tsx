@@ -1,4 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
+import type { KonvaEventObject } from 'konva/lib/Node';
+import type { Stage as KonvaStage } from 'konva/lib/Stage';
 import { Circle, Image as KonvaImage, Layer, Stage } from 'react-konva';
 import useImage from 'use-image';
 import { useStore } from './store';
@@ -6,9 +8,10 @@ import { useStore } from './store';
 export const DigitizerCanvas: React.FC = () => {
   const { imageUrl, mode, addPoint, setXAxisPoint, setYAxisPoint } = useStore();
   const [image] = useImage(imageUrl || '', 'anonymous');
-  const stageRef = useRef<any>(null);
-  const containerRef = useRef<HTMLDivElement>(null);
+  const stageRef = useRef<KonvaStage | null>(null);
+  const containerRef = useRef<HTMLDivElement | null>(null);
   const [size, setSize] = useState({ width: 0, height: 0 });
+  const [currentScale, setCurrentScale] = useState(1);
   const [calibStep, setCalibStep] = useState<1 | 2>(1);
 
   useEffect(() => {
@@ -27,13 +30,16 @@ export const DigitizerCanvas: React.FC = () => {
   }, []);
 
   useEffect(() => {
+    // Reset calibration sequence whenever the mode changes.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setCalibStep(1);
   }, [mode]);
 
-  const handleStageClick = (e: any) => {
+  const handleStageClick = (e: KonvaEventObject<MouseEvent>) => {
     if (!imageUrl) return;
 
     const stage = e.target.getStage();
+    if (!stage) return;
     const ptr = stage.getRelativePointerPosition();
     if (!ptr) return;
 
@@ -53,9 +59,6 @@ export const DigitizerCanvas: React.FC = () => {
   const points = useStore((state) =>
     state.series.flatMap((ser) => ser.points.map((p) => ({ ...p, color: ser.color })))
   );
-
-  const currentScale = stageRef.current?.scaleX() ?? 1;
-
   return (
     <div ref={containerRef} className="flex-1 h-full bg-slate-100 overflow-hidden relative">
       {!imageUrl && (
@@ -89,6 +92,7 @@ export const DigitizerCanvas: React.FC = () => {
             y: -(mousePointTo.y - (pointer?.y ?? 0) / newScale) * newScale,
           };
           stage.position(newPos);
+          setCurrentScale(newScale);
           stage.batchDraw();
         }}
       >
