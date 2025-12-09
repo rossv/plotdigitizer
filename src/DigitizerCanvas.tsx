@@ -56,8 +56,10 @@ export const DigitizerCanvas: React.FC = () => {
     }
   };
 
-  const points = useStore((state) =>
-    state.series.flatMap((ser) => ser.points.map((p) => ({ ...p, color: ser.color })))
+  const series = useStore((state) => state.series);
+  const points = React.useMemo(() =>
+    series.flatMap((ser) => ser.points.map((p) => ({ ...p, color: ser.color }))),
+    [series]
   );
   return (
     <div ref={containerRef} className="flex-1 h-full bg-slate-100 overflow-hidden relative">
