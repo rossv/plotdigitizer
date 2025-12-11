@@ -1,0 +1,33 @@
+<svg width="800" height="600" xmlns="http://www.w3.org/2000/svg">
+  <!-- Background -->
+  <rect width="100%" height="100%" fill="white"/>
+  
+  <!-- Grid -->
+  <defs>
+    <pattern id="grid" width="80" height="60" patternUnits="userSpaceOnUse">
+      <path d="M 80 0 L 0 0 0 60" fill="none" stroke="#f0f0f0" stroke-width="1"/>
+    </pattern>
+  </defs>
+  <rect width="100%" height="100%" fill="url(#grid)" />
+
+  <!-- Axes -->
+  <line x1="50" y1="550" x2="750" y2="550" stroke="black" stroke-width="2" />
+  <line x1="50" y1="550" x2="50" y2="50" stroke="black" stroke-width="2" />
+
+  <!-- Ticks X -->
+  <line x1="50" y1="550" x2="50" y2="560" stroke="black" />
+  <text x="45" y="575" font-family="Arial" font-size="14">0</text>
+  
+  <line x1="750" y1="550" x2="750" y2="560" stroke="black" />
+  <text x="740" y="575" font-family="Arial" font-size="14">100</text>
+
+  <!-- Ticks Y -->
+  <line x1="50" y1="550" x2="40" y2="550" stroke="black" />
+  <text x="20" y="555" font-family="Arial" font-size="14">0</text>
+
+  <line x1="50" y1="50" x2="40" y2="50" stroke="black" />
+  <text x="15" y="55" font-family="Arial" font-size="14">50</text>
+
+  <!-- Plot Line -->
+  <path d="M 50 550 Q 400 500 750 50" stroke="blue" stroke-width="3" fill="none" />
+</svg>

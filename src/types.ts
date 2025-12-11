@@ -23,4 +23,4 @@ export type Series = {
   yAxis: AxisCalibration; // Each series can technically have its own Y scaling
 };
 
-export type AppMode = 'IDLE' | 'CALIBRATE_X' | 'CALIBRATE_Y' | 'DIGITIZE';
+export type AppMode = 'IDLE' | 'CALIBRATE_X' | 'CALIBRATE_Y' | 'DIGITIZE' | 'TRACE';

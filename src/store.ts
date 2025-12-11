@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import { v4 as uuidv4 } from 'uuid';
 import type { AppMode, AxisCalibration, Point, Series } from './types';
 import { calculateCalibration, pixelToData } from './utils/math';
+import { fitLinear, fitPolynomial, fitExponential } from './utils/curveFit';
 
 interface AppState {
   imageUrl: string | null;
@@ -21,8 +22,22 @@ interface AppState {
   setYAxisPoint: (step: 1 | 2, px: number, py: number, val: number) => void;
   toggleYAxisLog: () => void;
 
+  pendingCalibrationPoint: { axis: 'X' | 'Y'; step: 1 | 2; px: number; py: number } | null;
+  setPendingCalibrationPoint: (point: { axis: 'X' | 'Y'; step: 1 | 2; px: number; py: number } | null) => void;
+  confirmCalibrationPoint: (val: number) => void;
+
   addPoint: (px: number, py: number) => void;
+  addPoints: (points: { px: number; py: number }[]) => void;
   deletePoint: (pointId: string) => void;
+
+  history: { series: Series[] }[];
+  historyIndex: number;
+  undo: () => void;
+  redo: () => void;
+
+  fittedCurves: { id: string; seriesId: string; type: string; points: Point[] }[];
+  addFittedCurve: (seriesId: string, type: 'linear' | 'polynomial' | 'exponential') => void;
+  deleteFittedCurve: (id: string) => void;
 }
 
 const initialAxis: AxisCalibration = {
@@ -38,33 +53,81 @@ export const useStore = create<AppState>((set, get) => ({
   setImageUrl: (url) => set({ imageUrl: url }),
 
   mode: 'IDLE',
-  setMode: (mode) => set({ mode }),
+  setMode: (mode) => set({ mode, pendingCalibrationPoint: null }),
+
+  pendingCalibrationPoint: null,
+  setPendingCalibrationPoint: (point) => set({ pendingCalibrationPoint: point }),
+
+  confirmCalibrationPoint: (val) => {
+    const { pendingCalibrationPoint: p, activeSeriesId } = get();
+    if (!p) return;
+
+    if (p.axis === 'X') {
+      set((state) => {
+        const newAxis = { ...state.xAxis } as AxisCalibration;
+        if (p.step === 1) newAxis.p1 = { px: p.px, py: p.py, val };
+        if (p.step === 2) newAxis.p2 = { px: p.px, py: p.py, val };
+
+        if (newAxis.p1 && newAxis.p2) {
+          try {
+            const { slope, intercept } = calculateCalibration(
+              newAxis.p1.px,
+              newAxis.p1.val,
+              newAxis.p2.px,
+              newAxis.p2.val,
+              newAxis.isLog
+            );
+            newAxis.slope = slope;
+            newAxis.intercept = intercept;
+            return { xAxis: newAxis, pendingCalibrationPoint: null, mode: 'IDLE' };
+          } catch (e) {
+            console.error(e);
+          }
+        }
+        return { xAxis: newAxis, pendingCalibrationPoint: null };
+      });
+    } else {
+      set((state) => {
+        const updatedSeries = state.series.map((series) => {
+          if (series.id !== activeSeriesId) return series;
+
+          const newAxis = { ...series.yAxis } as AxisCalibration;
+          if (p.step === 1) newAxis.p1 = { px: p.px, py: p.py, val };
+          if (p.step === 2) newAxis.p2 = { px: p.px, py: p.py, val };
+
+          if (newAxis.p1 && newAxis.p2) {
+            try {
+              const { slope, intercept } = calculateCalibration(
+                newAxis.p1.py,
+                newAxis.p1.val,
+                newAxis.p2.py,
+                newAxis.p2.val,
+                newAxis.isLog
+              );
+              newAxis.intercept = intercept;
+              newAxis.slope = slope;
+              return { ...series, yAxis: newAxis };
+            } catch (e) {
+              console.error(e);
+            }
+          }
+          return { ...series, yAxis: newAxis };
+        });
+
+        const activeSeries = updatedSeries.find(s => s.id === activeSeriesId);
+        const isComplete = activeSeries?.yAxis.p1 && activeSeries?.yAxis.p2;
+
+        return {
+          series: updatedSeries,
+          pendingCalibrationPoint: null,
+          ...(isComplete ? { mode: 'IDLE' } : {})
+        };
+      });
+    }
+  },
 
   xAxis: { ...initialAxis },
-  setXAxisPoint: (step, px, py, val) => {
-    set((state) => {
-      const newAxis = { ...state.xAxis } as AxisCalibration;
-      if (step === 1) newAxis.p1 = { px, py, val };
-      if (step === 2) newAxis.p2 = { px, py, val };
-
-      if (newAxis.p1 && newAxis.p2) {
-        try {
-          const { slope, intercept } = calculateCalibration(
-            newAxis.p1.px,
-            newAxis.p1.val,
-            newAxis.p2.px,
-            newAxis.p2.val,
-            newAxis.isLog
-          );
-          newAxis.slope = slope;
-          newAxis.intercept = intercept;
-        } catch (e) {
-          console.error(e);
-        }
-      }
-      return { xAxis: newAxis, mode: 'IDLE' };
-    });
-  },
+  setXAxisPoint: (_step, _px, _py, _val) => { },
   toggleXAxisLog: () => {
     set((state) => ({ xAxis: { ...state.xAxis, isLog: !state.xAxis.isLog } }));
   },
@@ -99,39 +162,7 @@ export const useStore = create<AppState>((set, get) => ({
     }),
 
   setActiveSeries: (id) => set({ activeSeriesId: id }),
-
-  setYAxisPoint: (step, px, py, val) => {
-    const { activeSeriesId } = get();
-    set((state) => {
-      const updatedSeries = state.series.map((series) => {
-        if (series.id !== activeSeriesId) return series;
-
-        const newAxis = { ...series.yAxis } as AxisCalibration;
-        if (step === 1) newAxis.p1 = { px, py, val };
-        if (step === 2) newAxis.p2 = { px, py, val };
-
-        if (newAxis.p1 && newAxis.p2) {
-          try {
-            const { slope, intercept } = calculateCalibration(
-              newAxis.p1.py,
-              newAxis.p1.val,
-              newAxis.p2.py,
-              newAxis.p2.val,
-              newAxis.isLog
-            );
-            newAxis.slope = slope;
-            newAxis.intercept = intercept;
-          } catch (e) {
-            console.error(e);
-          }
-        }
-
-        return { ...series, yAxis: newAxis };
-      });
-
-      return { series: updatedSeries, mode: 'IDLE' };
-    });
-  },
+  setYAxisPoint: (_step, _px, _py, _val) => { },
 
   toggleYAxisLog: () => {
     const { activeSeriesId } = get();
@@ -144,35 +175,138 @@ export const useStore = create<AppState>((set, get) => ({
     }));
   },
 
-  addPoint: (px, py) =>
-    set((state) => {
-      const activeSeries = state.series.find((s) => s.id === state.activeSeriesId);
-      if (!activeSeries) return {};
+  fittedCurves: [],
+  addFittedCurve: (seriesId, type) => {
+    const state = get();
+    const series = state.series.find(s => s.id === seriesId);
+    if (!series || series.points.length < 2) return;
 
+    let fitPoints: Point[] = [];
+    try {
+      if (type === 'linear') fitPoints = fitLinear(series.points);
+      else if (type === 'polynomial') fitPoints = fitPolynomial(series.points);
+      else if (type === 'exponential') fitPoints = fitExponential(series.points);
+    } catch (e) {
+      console.error('Fit failed', e);
+      return;
+    }
+
+    if (fitPoints.length === 0) return;
+
+    const newCurve = {
+      id: uuidv4(),
+      seriesId,
+      type,
+      points: fitPoints
+    };
+
+    set(state => ({
+      fittedCurves: [...state.fittedCurves, newCurve]
+    }));
+  },
+
+  deleteFittedCurve: (id) => set(state => ({
+    fittedCurves: state.fittedCurves.filter(c => c.id !== id)
+  })),
+
+  addPoint: (px, py) => set((state) => {
+    const activeSeries = state.series.find((s) => s.id === state.activeSeriesId);
+    if (!activeSeries) return {};
+
+    const coords = pixelToData(px, py, state.xAxis, activeSeries.yAxis);
+    if (!coords) return {};
+
+    const newPoint: Point = {
+      id: uuidv4(),
+      x: px,
+      y: py,
+      seriesId: state.activeSeriesId,
+      dataX: coords.x,
+      dataY: coords.y,
+    };
+
+    const updatedSeries = state.series.map((s) =>
+      s.id === state.activeSeriesId ? { ...s, points: [...s.points, newPoint] } : s
+    );
+
+    const newHistory = state.history ? state.history.slice(0, state.historyIndex + 1) : [];
+    newHistory.push({ series: updatedSeries });
+
+    return {
+      series: updatedSeries,
+      history: newHistory,
+      historyIndex: newHistory.length - 1
+    };
+  }),
+
+  addPoints: (points: { px: number; py: number }[]) => set((state) => {
+    const activeSeries = state.series.find((s) => s.id === state.activeSeriesId);
+    if (!activeSeries) return {};
+
+    const newPoints: Point[] = [];
+    for (const { px, py } of points) {
       const coords = pixelToData(px, py, state.xAxis, activeSeries.yAxis);
-      if (!coords) return {};
-
-      const newPoint: Point = {
+      if (!coords) continue;
+      newPoints.push({
         id: uuidv4(),
         x: px,
         y: py,
         seriesId: state.activeSeriesId,
         dataX: coords.x,
         dataY: coords.y,
-      };
+      });
+    }
 
-      const updatedSeries = state.series.map((s) =>
-        s.id === state.activeSeriesId ? { ...s, points: [...s.points, newPoint] } : s
-      );
+    if (newPoints.length === 0) return {};
 
-      return { series: updatedSeries };
-    }),
+    const updatedSeries = state.series.map((s) =>
+      s.id === state.activeSeriesId ? { ...s, points: [...s.points, ...newPoints] } : s
+    );
 
-  deletePoint: (pointId) =>
-    set((state) => ({
-      series: state.series.map((s) => ({
-        ...s,
-        points: s.points.filter((p) => p.id !== pointId),
-      })),
-    })),
+    const newHistory = state.history ? state.history.slice(0, state.historyIndex + 1) : [];
+    newHistory.push({ series: updatedSeries });
+
+    return {
+      series: updatedSeries,
+      history: newHistory,
+      historyIndex: newHistory.length - 1
+    };
+  }),
+
+  deletePoint: (pointId) => set((state) => {
+    const updatedSeries = state.series.map((s) => ({
+      ...s,
+      points: s.points.filter((p) => p.id !== pointId),
+    }));
+
+    const newHistory = state.history ? state.history.slice(0, state.historyIndex + 1) : [];
+    newHistory.push({ series: updatedSeries });
+
+    return {
+      series: updatedSeries,
+      history: newHistory,
+      historyIndex: newHistory.length - 1
+    };
+  }),
+
+  history: [],
+  historyIndex: -1,
+
+  undo: () => set((state) => {
+    if (state.historyIndex <= 0) return {};
+    const newIndex = state.historyIndex - 1;
+    return {
+      series: state.history[newIndex].series,
+      historyIndex: newIndex
+    };
+  }),
+
+  redo: () => set((state) => {
+    if (!state.history || state.historyIndex >= state.history.length - 1) return {};
+    const newIndex = state.historyIndex + 1;
+    return {
+      series: state.history[newIndex].series,
+      historyIndex: newIndex
+    };
+  }),
 }));
