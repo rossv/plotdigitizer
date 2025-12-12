@@ -11,7 +11,6 @@ export default function App() {
   const digitizerRef = useRef<DigitizerHandle>(null);
 
   const {
-    imageUrl,
     setImageUrl,
     mode,
     setMode,
