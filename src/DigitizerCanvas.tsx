@@ -204,7 +204,7 @@ export const DigitizerCanvas = forwardRef<DigitizerHandle>((_, ref) => {
             0, 0, size, size
           );
 
-          // Draw Reticule (Crosshair)
+          // Draw Reticle (Crosshair)
           ctx.strokeStyle = 'rgba(255, 0, 0, 0.5)';
           ctx.lineWidth = 1;
           ctx.beginPath();
