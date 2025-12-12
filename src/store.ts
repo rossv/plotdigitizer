@@ -507,11 +507,19 @@ export const useStore = create<AppState>((set, get) => ({
   historyIndex: -1,
 
   undo: () => set((state) => {
-    if (state.historyIndex <= 0) return {};
+    if (state.historyIndex < 0) return {};
+
     const newIndex = state.historyIndex - 1;
+    const targetIndex = Math.max(newIndex, 0);
+
+    if (!state.history || targetIndex >= state.history.length) {
+      // Prevent history underflow and ignore undo if no snapshot exists
+      return { historyIndex: newIndex };
+    }
+
     return {
-      series: state.history[newIndex].series,
-      yAxes: state.history[newIndex].yAxes, // restore axes too if meaningful
+      series: state.history[targetIndex].series,
+      yAxes: state.history[targetIndex].yAxes, // restore axes too if meaningful
       historyIndex: newIndex
     };
   }),
