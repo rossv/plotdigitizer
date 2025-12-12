@@ -51,4 +51,11 @@ export type Series = {
   labelPosition?: { x: number; y: number };
 };
 
-export type AppMode = 'IDLE' | 'CALIBRATE_X' | 'CALIBRATE_Y' | 'DIGITIZE' | 'TRACE';
+export type AppMode = 'IDLE' | 'CALIBRATE_X' | 'CALIBRATE_Y' | 'DIGITIZE' | 'TRACE' | 'SELECT';
+
+export type SnapConfig = {
+  mode: 'decimal' | 'sigfig';
+  precision: number;
+  targets: ('x' | 'y')[];
+};
+

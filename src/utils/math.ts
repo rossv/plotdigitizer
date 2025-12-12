@@ -45,3 +45,35 @@ export const pixelToData = (
 
   return { x: xVal, y: yVal };
 };
+
+export const dataToPixel = (
+  dataX: number,
+  dataY: number,
+  xAxis: AxisCalibration,
+  yAxis: AxisCalibration
+) => {
+  if (
+    xAxis.slope === null ||
+    xAxis.intercept === null ||
+    yAxis.slope === null ||
+    yAxis.intercept === null
+  ) {
+    return null;
+  }
+
+  let xVal = dataX;
+  if (xAxis.isLog) {
+    if (xVal <= 0) return null; // Cannot map <= 0 on log scale
+    xVal = Math.log10(xVal);
+  }
+  const px = (xVal - xAxis.intercept) / xAxis.slope;
+
+  let yVal = dataY;
+  if (yAxis.isLog) {
+    if (yVal <= 0) return null;
+    yVal = Math.log10(yVal);
+  }
+  const py = (yVal - yAxis.intercept) / yAxis.slope;
+
+  return { x: px, y: py };
+};

@@ -105,13 +105,23 @@ export interface DigitizerHandle {
 }
 
 export const DigitizerCanvas = forwardRef<DigitizerHandle>((_, ref) => {
-  const { addPoint, setPendingCalibrationPoint, updateSeriesLabelPosition, activeWorkspaceId, workspaces } = useStore();
+  const {
+    addPoint,
+    setPendingCalibrationPoint,
+    updateSeriesLabelPosition,
+    activeWorkspaceId,
+    workspaces,
+    selectPoints,
+    togglePointSelection,
+    updatePointPosition,
+    clearSelection
+  } = useStore();
 
   const activeWorkspace = workspaces.find(w => w.id === activeWorkspaceId);
   // We can return null or a skeleton if no workspace, but app should ensure one exists
   if (!activeWorkspace) return null;
 
-  const { imageUrl, mode, xAxis, xAxisName, series, yAxes, activeYAxisId } = activeWorkspace;
+  const { imageUrl, mode, xAxis, xAxisName, series, yAxes, activeYAxisId, selectedPointIds } = activeWorkspace;
   const [image] = useImage(imageUrl || '', 'anonymous');
   const stageRef = useRef<KonvaStage | null>(null);
   const containerRef = useRef<HTMLDivElement | null>(null);
@@ -120,6 +130,14 @@ export const DigitizerCanvas = forwardRef<DigitizerHandle>((_, ref) => {
   const [currentScale, setCurrentScale] = useState(1);
   const [calibStep, setCalibStep] = useState<1 | 2>(1);
   const [snapPoint, setSnapPoint] = useState<{ x: number; y: number } | null>(null);
+
+  // Selection State
+  const isSelectingRef = useRef(false);
+  const selectionStartRef = useRef<{ x: number, y: number } | null>(null);
+  const [selectionBox, setSelectionBox] = useState<{ x: number, y: number, width: number, height: number } | null>(null);
+
+  // Guide Lines
+  const [pointerPos, setPointerPos] = useState<{ x: number, y: number } | null>(null);
 
   useImperativeHandle(ref, () => ({
     toDataURL: (options) => {
@@ -183,6 +201,19 @@ export const DigitizerCanvas = forwardRef<DigitizerHandle>((_, ref) => {
 
     const pointer = stage.getPointerPosition();
     if (!pointer) return;
+
+    // Update pointer pos for Guide Lines
+    const relPos = stage.getRelativePointerPosition();
+    if (relPos) setPointerPos(relPos);
+
+    // Box Selection Logic
+    if (mode === 'SELECT' && isSelectingRef.current && selectionStartRef.current && relPos) {
+      const x = Math.min(selectionStartRef.current.x, relPos.x);
+      const y = Math.min(selectionStartRef.current.y, relPos.y);
+      const width = Math.abs(relPos.x - selectionStartRef.current.x);
+      const height = Math.abs(relPos.y - selectionStartRef.current.y);
+      setSelectionBox({ x, y, width, height });
+    }
 
     // Snapping Logic (only in calibration modes)
     if (mode === 'CALIBRATE_X' || mode === 'CALIBRATE_Y') {
@@ -268,6 +299,9 @@ export const DigitizerCanvas = forwardRef<DigitizerHandle>((_, ref) => {
     if (!stage) return;
     const ptr = stage.getRelativePointerPosition();
     if (!ptr) return;
+
+    // Prevent adding point if we were selecting
+    if (selectionBox && (selectionBox.width > 2 || selectionBox.height > 2)) return;
 
     if (mode === 'DIGITIZE') {
       addPoint(ptr.x, ptr.y);
@@ -366,9 +400,56 @@ export const DigitizerCanvas = forwardRef<DigitizerHandle>((_, ref) => {
   };
 
   const points = React.useMemo(() =>
-    series.flatMap((ser) => ser.points.map((p) => ({ ...p, color: ser.color }))),
-    [series]
+    series.flatMap((ser) => ser.points.map((p) => ({
+      ...p,
+      color: ser.color,
+      selected: selectedPointIds?.includes(p.id)
+    }))),
+    [series, selectedPointIds]
   );
+
+  const handleStageMouseDown = (e: KonvaEventObject<MouseEvent>) => {
+    if (mode !== 'SELECT') return;
+
+    // Check if clicking on background (Stage or Image)
+    const isBackground = e.target === e.target.getStage() || e.target.name() === 'source-image';
+
+    if (isBackground) {
+      const stage = e.target.getStage();
+      const ptr = stage?.getRelativePointerPosition();
+      if (ptr) {
+        isSelectingRef.current = true;
+        selectionStartRef.current = ptr;
+
+        // Clear selection if no modifier key
+        if (!e.evt.shiftKey && !e.evt.ctrlKey && !e.evt.metaKey) {
+          clearSelection();
+        }
+      }
+    }
+  };
+
+  const handleStageMouseUp = (e: KonvaEventObject<MouseEvent>) => {
+    if (mode === 'SELECT' && isSelectingRef.current) {
+      if (selectionBox) {
+        // Find points in box
+        const box = selectionBox;
+        const selectedIds: string[] = [];
+        points.forEach(p => {
+          if (p.x >= box.x && p.x <= box.x + box.width && p.y >= box.y && p.y <= box.y + box.height) {
+            selectedIds.push(p.id);
+          }
+        });
+        // Append
+        selectPoints(selectedIds, true);
+      } else {
+        // Just a click on stage in select mode -> clear selection (handled in mousedown usually, but safe here too)
+      }
+    }
+    isSelectingRef.current = false;
+    selectionStartRef.current = null;
+    setSelectionBox(null);
+  };
 
   const [stageSize, setStageSize] = useState({ width: 0, height: 0 });
 
@@ -402,7 +483,12 @@ export const DigitizerCanvas = forwardRef<DigitizerHandle>((_, ref) => {
       {/* Instruction Banner */}
       {imageUrl && mode !== 'IDLE' && mode !== 'DIGITIZE' && (
         <div className="absolute top-4 left-1/2 -translate-x-1/2 z-10 bg-white/90 dark:bg-slate-900/90 backdrop-blur border border-slate-200 dark:border-slate-700 px-4 py-2 rounded-full shadow-sm text-sm font-medium text-slate-700 dark:text-slate-300 pointer-events-none">
-          Click point {calibStep} for {mode === 'CALIBRATE_X' ? 'X' : (activeYAxisDef ? activeYAxisDef.name : 'Y Axis')}
+          {mode === 'SELECT'
+            ? 'Selection Mode: Drag to select, click to toggle. Del to delete, Arrows to move.'
+            : (mode === 'TRACE'
+              ? 'Wand Mode: Click a line to auto-trace'
+              : `Click point ${calibStep} for ${mode === 'CALIBRATE_X' ? 'X' : (activeYAxisDef ? activeYAxisDef.name : 'Y Axis')}`)
+          }
         </div>
       )}
 
@@ -416,7 +502,7 @@ export const DigitizerCanvas = forwardRef<DigitizerHandle>((_, ref) => {
       <Stage
         width={stageSize.width}
         height={stageSize.height}
-        draggable
+        draggable={mode !== 'SELECT'}
         onClick={handleStageClick}
         onMouseMove={handleStageMouseMove}
         style={{ cursor: mode === 'IDLE' ? 'default' : 'crosshair' }}
@@ -444,6 +530,8 @@ export const DigitizerCanvas = forwardRef<DigitizerHandle>((_, ref) => {
           setCurrentScale(newScale);
           stage.batchDraw();
         }}
+        onMouseDown={handleStageMouseDown}
+        onMouseUp={handleStageMouseUp}
       >
         <Layer>{image && <KonvaImage name="source-image" image={image} />}</Layer>
 
@@ -619,16 +707,63 @@ export const DigitizerCanvas = forwardRef<DigitizerHandle>((_, ref) => {
           )}
         </Layer>
 
+        {/* Selection Box */}
         <Layer>
+          {selectionBox && (
+            <Rect
+              x={selectionBox.x}
+              y={selectionBox.y}
+              width={selectionBox.width}
+              height={selectionBox.height}
+              fill="rgba(59, 130, 246, 0.2)"
+              stroke="#3b82f6"
+              strokeWidth={1 / currentScale}
+            />
+          )}
+        </Layer>
+
+        <Layer>
+          {/* Guide Lines (Crosshair) */}
+          {mode === 'DIGITIZE' && pointerPos && (
+            <>
+              <KonvaLine
+                points={[0, pointerPos.y, stageSize.width / currentScale, pointerPos.y]}
+                stroke="red"
+                strokeWidth={1 / currentScale}
+                dash={[4, 4]}
+                opacity={0.5}
+                listening={false}
+              />
+              <KonvaLine
+                points={[pointerPos.x, 0, pointerPos.x, stageSize.height / currentScale]}
+                stroke="red"
+                strokeWidth={1 / currentScale}
+                dash={[4, 4]}
+                opacity={0.5}
+                listening={false}
+              />
+            </>
+          )}
+
           {points.map((p) => (
             <Circle
               key={p.id}
               x={p.x}
               y={p.y}
-              radius={4 / currentScale}
+              radius={(p.selected ? 6 : 4) / currentScale}
               fill={p.color}
-              stroke="#0f172a"
-              strokeWidth={1 / currentScale}
+              stroke={p.selected ? '#3b82f6' : '#0f172a'}
+              strokeWidth={(p.selected ? 3 : 1) / currentScale}
+              draggable
+              onDragEnd={(e) => {
+                updatePointPosition(p.id, e.target.x(), e.target.y());
+              }}
+              onClick={(e) => {
+                e.cancelBubble = true;
+                if (mode === 'SELECT' || mode === 'DIGITIZE') {
+                  togglePointSelection(p.id, e.evt.ctrlKey || e.evt.shiftKey);
+                }
+              }}
             />
           ))}
         </Layer>

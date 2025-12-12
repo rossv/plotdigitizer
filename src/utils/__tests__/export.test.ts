@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { generateCSV } from '../export';
+import { generateTableData as generateCSV } from '../export';
 import type { Series } from '../../types';
 
 describe('generateCSV', () => {

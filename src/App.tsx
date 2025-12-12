@@ -1,9 +1,10 @@
 
 import React, { useEffect, useRef } from 'react';
-import { Plus, ScanLine, Image as ImageIcon, Sun, Moon, Trash2, Download, Database, Undo, Redo, Camera, Copy, ImageOff, Save, FolderOpen, X } from 'lucide-react';
+import { Plus, ScanLine, Image as ImageIcon, Sun, Moon, Trash2, Download, Database, Undo, Redo, Camera, Copy, ImageOff, Save, FolderOpen, X, MousePointer2, Magnet } from 'lucide-react';
 import { DigitizerCanvas } from './DigitizerCanvas';
 import type { DigitizerHandle } from './DigitizerCanvas';
 import { useStore } from './store';
+import { SnappingTool } from './components/SnappingTool';
 import testPlotUrl from './assets/test_plot.svg';
 import { generateTableData, downloadCSV } from './utils/export';
 import { loadPdfDocument } from './utils/pdf-utils';
@@ -13,6 +14,7 @@ import * as pdfjsLib from 'pdfjs-dist';
 export default function App() {
   const digitizerRef = useRef<DigitizerHandle>(null);
   const [pdfDocument, setPdfDocument] = React.useState<pdfjsLib.PDFDocumentProxy | null>(null);
+  const [isSnappingToolOpen, setIsSnappingToolOpen] = React.useState(false);
 
   const {
     activeWorkspaceId,
@@ -44,6 +46,8 @@ export default function App() {
     updateSeriesName,
     clearSeriesPoints,
     toggleSeriesLabels,
+    deleteSelectedPoints,
+    nudgeSelection,
   } = useStore();
 
   const activeWorkspace = workspaces.find(w => w.id === activeWorkspaceId);
@@ -54,7 +58,6 @@ export default function App() {
   }
 
   const {
-    imageUrl,
     mode,
     series,
     activeSeriesId,
@@ -197,12 +200,31 @@ export default function App() {
       } else if ((e.metaKey || e.ctrlKey) && e.key === 'y') {
         e.preventDefault();
         redo();
+      } else if (e.key === 'Delete' || e.key === 'Backspace') {
+        const activeTag = document.activeElement?.tagName.toLowerCase();
+        if (activeTag === 'input' || activeTag === 'textarea') return;
+
+        e.preventDefault();
+        deleteSelectedPoints();
+      } else if (e.key.startsWith('Arrow')) {
+        const activeTag = document.activeElement?.tagName.toLowerCase();
+        if (activeTag === 'input' || activeTag === 'textarea') return;
+
+        e.preventDefault();
+        const step = e.shiftKey ? 10 : 1; // Shift for faster nudge
+        let dx = 0;
+        let dy = 0;
+        if (e.key === 'ArrowUp') dy = -step;
+        if (e.key === 'ArrowDown') dy = step;
+        if (e.key === 'ArrowLeft') dx = -step;
+        if (e.key === 'ArrowRight') dx = step;
+        nudgeSelection(dx, dy);
       }
     };
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [undo, redo]);
+  }, [undo, redo, deleteSelectedPoints, nudgeSelection]);
 
   // Handle paste events
   useEffect(() => {
@@ -608,6 +630,19 @@ export default function App() {
               >
                 Wand
               </button>
+              <button
+                disabled={!isCalibrated}
+                onClick={() => setMode(mode === 'SELECT' ? 'IDLE' : 'SELECT')}
+                className={`col-span-2 flex items-center justify-center gap-2 rounded-xl px-3 py-3 text-sm font-bold transition shadow-sm ${mode === 'SELECT'
+                  ? 'bg-blue-600 text-white shadow-blue-500/20'
+                  : isCalibrated
+                    ? 'bg-blue-50 dark:bg-blue-900/20 text-blue-700 dark:text-blue-400 hover:bg-blue-100 dark:hover:bg-blue-900/30 ring-1 ring-inset ring-blue-600/20'
+                    : 'bg-slate-100 dark:bg-slate-800 text-slate-400 cursor-not-allowed'
+                  }`}
+              >
+                <MousePointer2 className="h-4 w-4" />
+                Select / Edit
+              </button>
             </div>
           </div>
 
@@ -616,6 +651,15 @@ export default function App() {
             <div className="flex items-center justify-between mb-2">
               <h3 className="font-semibold text-slate-800 dark:text-slate-200 text-sm">Points <span className="ml-1 text-xs font-normal text-slate-400">({series.reduce((acc, s) => acc + s.points.length, 0)})</span></h3>
               <div className="flex gap-1">
+                {/* Snap Button */}
+                <button
+                  onClick={() => setIsSnappingToolOpen(true)}
+                  disabled={series.reduce((acc, s) => acc + s.points.length, 0) === 0}
+                  title="Snap Points to Value"
+                  className="p-1 rounded hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-500 dark:text-slate-400 disabled:opacity-50 disabled:cursor-not-allowed transition"
+                >
+                  <Magnet className="h-3.5 w-3.5" />
+                </button>
                 {/* Export Mini Buttons */}
                 <button
                   onClick={() => handleExportImage(false)}
@@ -806,6 +850,11 @@ export default function App() {
           onCancel={() => setPdfDocument(null)}
         />
       )}
+      <SnappingTool
+        seriesId={activeSeriesId}
+        isOpen={isSnappingToolOpen}
+        onClose={() => setIsSnappingToolOpen(false)}
+      />
     </div>
   );
 }

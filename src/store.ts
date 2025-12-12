@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 import { v4 as uuidv4 } from 'uuid';
-import type { AppMode, AxisCalibration, Point, Series, YAxisDefinition, CurveFitConfig } from './types';
-import { calculateCalibration, pixelToData } from './utils/math';
+import type { AppMode, AxisCalibration, Point, Series, YAxisDefinition, CurveFitConfig, SnapConfig } from './types';
+import { calculateCalibration, pixelToData, dataToPixel } from './utils/math';
 import { fitLinear, fitPolynomial, fitExponential } from './utils/curveFit';
 
 // --- Types ---
@@ -28,6 +28,8 @@ interface Workspace {
   // Undo/Redo history
   history: { series: Series[]; yAxes: YAxisDefinition[] }[];
   historyIndex: number;
+
+  selectedPointIds: string[];
 }
 
 interface StoreState {
@@ -86,6 +88,15 @@ interface StoreState {
   ) => void;
 
   updateSeriesLabelPosition: (seriesId: string, position: { x: number; y: number } | undefined) => void;
+
+  // Selection & Editing
+  selectPoints: (ids: string[], append?: boolean) => void;
+  togglePointSelection: (id: string, multi?: boolean) => void;
+  clearSelection: () => void;
+  deleteSelectedPoints: () => void;
+  updatePointPosition: (pointId: string, px: number, py: number) => void;
+  nudgeSelection: (dx: number, dy: number) => void;
+  snapSeriesPoints: (seriesId: string, config: SnapConfig) => void;
 }
 
 // --- Helpers ---
@@ -185,6 +196,7 @@ const createInitialWorkspace = (name: string): Workspace => ({
   pendingCalibrationPoint: null,
   history: [],
   historyIndex: -1,
+  selectedPointIds: [],
 });
 
 // Helper to update the active workspace
@@ -202,7 +214,7 @@ const updateActiveWorkspace = (state: StoreState, updater: (ws: Workspace) => Pa
   return { workspaces: newWorkspaces };
 };
 
-export const useStore = create<StoreState>((set, get) => ({
+export const useStore = create<StoreState>((set) => ({
   // Global State
   theme: (localStorage.getItem('theme') as 'light' | 'dark') || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'),
   workspaces: [createInitialWorkspace('Workspace 1')],
@@ -677,6 +689,188 @@ export const useStore = create<StoreState>((set, get) => ({
   updateSeriesLabelPosition: (seriesId, position) => set(state => updateActiveWorkspace(state, (ws) => ({
     series: ws.series.map(s => s.id === seriesId ? { ...s, labelPosition: position } : s)
   }))),
+
+  // --- Selection & Editing ---
+
+  selectPoints: (ids, append = false) => set(state => updateActiveWorkspace(state, (ws) => ({
+    selectedPointIds: append ? [...new Set([...ws.selectedPointIds, ...ids])] : ids
+  }))),
+
+  togglePointSelection: (id, multi = true) => set(state => updateActiveWorkspace(state, (ws) => {
+    const isSelected = ws.selectedPointIds.includes(id);
+    let newSelection;
+    if (multi) {
+      newSelection = isSelected
+        ? ws.selectedPointIds.filter(pid => pid !== id)
+        : [...ws.selectedPointIds, id];
+    } else {
+      newSelection = [id];
+    }
+    return { selectedPointIds: newSelection };
+  })),
+
+  clearSelection: () => set(state => updateActiveWorkspace(state, () => ({ selectedPointIds: [] }))),
+
+  deleteSelectedPoints: () => set(state => updateActiveWorkspace(state, (ws) => {
+    if (ws.selectedPointIds.length === 0) return {};
+
+    const updatedSeries = ws.series.map(s => {
+      // Optimization: check if series has any selected points
+      const hasSelected = s.points.some(p => ws.selectedPointIds.includes(p.id));
+      if (!hasSelected) return s;
+
+      const newPoints = s.points.filter(p => !ws.selectedPointIds.includes(p.id));
+      return updateSeriesFit({ ...s, points: newPoints });
+    });
+
+    const newHistory = ws.history ? ws.history.slice(0, ws.historyIndex + 1) : [];
+    newHistory.push({ series: updatedSeries, yAxes: ws.yAxes });
+
+    return {
+      series: updatedSeries,
+      selectedPointIds: [],
+      history: newHistory,
+      historyIndex: newHistory.length - 1
+    };
+  })),
+
+  updatePointPosition: (pointId, px, py) => set(state => updateActiveWorkspace(state, (ws) => {
+    // Find series for this point
+    let targetSeriesId = '';
+    for (const s of ws.series) {
+      if (s.points.some(p => p.id === pointId)) {
+        targetSeriesId = s.id;
+        break;
+      }
+    }
+    if (!targetSeriesId) return {};
+
+    const yAxis = ws.yAxes.find(y => y.id === ws.series.find(s => s.id === targetSeriesId)?.yAxisId)?.calibration;
+    const xAxis = ws.xAxis;
+
+    if (!yAxis) return {};
+
+    const coords = pixelToData(px, py, xAxis, yAxis); // Calculate new data based on pixel
+    if (!coords) return {};
+
+    const updatedSeries = ws.series.map(s => {
+      if (s.id !== targetSeriesId) return s;
+      const newPoints = s.points.map(p => {
+        if (p.id !== pointId) return p;
+        return {
+          ...p,
+          x: px,
+          y: py,
+          dataX: coords.x,
+          dataY: coords.y
+        };
+      }).sort((a, b) => (a.dataX || 0) - (b.dataX || 0)); // Keep sorted
+      return updateSeriesFit({ ...s, points: newPoints });
+    });
+
+    // Don't push history on every drag frame? 
+    // Usually this function is called on DragEnd. So yes, push history.
+    const newHistory = ws.history ? ws.history.slice(0, ws.historyIndex + 1) : [];
+    newHistory.push({ series: updatedSeries, yAxes: ws.yAxes });
+
+    return {
+      series: updatedSeries,
+      history: newHistory,
+      historyIndex: newHistory.length - 1
+    };
+  })),
+
+  nudgeSelection: (dx, dy) => set(state => updateActiveWorkspace(state, (ws) => {
+    if (ws.selectedPointIds.length === 0) return {};
+
+    const xAxis = ws.xAxis;
+
+    const updatedSeries = ws.series.map(s => {
+      const hasSelected = s.points.some(p => ws.selectedPointIds.includes(p.id));
+      if (!hasSelected) return s;
+
+      const yAxis = ws.yAxes.find(y => y.id === s.yAxisId)?.calibration;
+      if (!yAxis) return s; // Should not happen if series exists
+
+      const newPoints = s.points.map(p => {
+        if (!ws.selectedPointIds.includes(p.id)) return p;
+        const newPx = p.x + dx;
+        const newPy = p.y + dy;
+        const coords = pixelToData(newPx, newPy, xAxis, yAxis);
+        return {
+          ...p,
+          x: newPx,
+          y: newPy,
+          dataX: coords?.x,
+          dataY: coords?.y
+        };
+      }).sort((a, b) => (a.dataX || 0) - (b.dataX || 0));
+
+      return updateSeriesFit({ ...s, points: newPoints });
+    });
+
+    const newHistory = ws.history ? ws.history.slice(0, ws.historyIndex + 1) : [];
+    newHistory.push({ series: updatedSeries, yAxes: ws.yAxes });
+
+    return {
+      series: updatedSeries,
+      history: newHistory,
+      historyIndex: newHistory.length - 1
+    };
+  })),
+
+  snapSeriesPoints: (seriesId, config) => set(state => updateActiveWorkspace(state, (ws) => {
+    const { mode, precision, targets } = config;
+    const xAxis = ws.xAxis;
+
+    const updatedSeries = ws.series.map(s => {
+      if (s.id !== seriesId) return s;
+
+      const yAxis = ws.yAxes.find(y => y.id === s.yAxisId)?.calibration;
+      if (!yAxis) return s;
+
+      const newPoints = s.points.map(p => {
+        if (p.dataX === undefined || p.dataY === undefined) return p;
+
+        let newDataX = p.dataX;
+        let newDataY = p.dataY;
+
+        if (targets.includes('x')) {
+          if (mode === 'decimal') newDataX = parseFloat(newDataX.toFixed(precision));
+          else if (mode === 'sigfig') newDataX = parseFloat(newDataX.toPrecision(precision));
+        }
+
+        if (targets.includes('y')) {
+          if (mode === 'decimal') newDataY = parseFloat(newDataY.toFixed(precision));
+          else if (mode === 'sigfig') newDataY = parseFloat(newDataY.toPrecision(precision));
+        }
+
+        const newPixelCoords = dataToPixel(newDataX, newDataY, xAxis, yAxis);
+
+        // If conversion fails (e.g. invalid log value), keep origin
+        if (!newPixelCoords) return p;
+
+        return {
+          ...p,
+          dataX: newDataX,
+          dataY: newDataY,
+          x: newPixelCoords.x,
+          y: newPixelCoords.y
+        };
+      });
+
+      return updateSeriesFit({ ...s, points: newPoints });
+    });
+
+    const newHistory = ws.history ? ws.history.slice(0, ws.historyIndex + 1) : [];
+    newHistory.push({ series: updatedSeries, yAxes: ws.yAxes });
+
+    return {
+      series: updatedSeries,
+      history: newHistory,
+      historyIndex: newHistory.length - 1
+    };
+  })),
 
 }));
 
