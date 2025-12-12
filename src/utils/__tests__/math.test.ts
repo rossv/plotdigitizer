@@ -1,6 +1,6 @@
 
 import { describe, it, expect } from 'vitest';
-import { calculateCalibration, pixelToData, dataToPixel } from '../math';
+import { pixelToData, dataToPixel } from '../math';
 import type { AxisCalibration } from '../../types';
 
 describe('math utils', () => {
