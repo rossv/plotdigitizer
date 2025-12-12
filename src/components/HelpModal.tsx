@@ -160,7 +160,11 @@ export const HelpModal: React.FC<HelpModalProps> = ({ isOpen, onClose }) => {
                     {activeTab === 'about' && (
                         <div className="space-y-6 text-center py-8">
                             <div>
-                                <img src="/logo.png" alt="Logo" className="w-20 h-20 mx-auto mb-4 object-contain" />
+                                <img
+                                  src={`${import.meta.env.BASE_URL}logo.png`}
+                                  alt="Logo"
+                                  className="w-20 h-20 mx-auto mb-4 object-contain"
+                                />
                                 <h2 className="text-2xl font-bold text-slate-900 dark:text-white mb-2">Plot Digitizer</h2>
                                 <span className="px-2 py-1 rounded-md bg-blue-100 dark:bg-blue-500/20 text-blue-600 dark:text-blue-300 text-xs font-bold tracking-wide uppercase border border-blue-200 dark:border-blue-500/30">
                                     Version 1.0.0

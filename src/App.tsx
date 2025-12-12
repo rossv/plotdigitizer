@@ -270,7 +270,11 @@ export default function App() {
         {/* Header Bin */}
         <div className="p-4 bg-white dark:bg-slate-900 rounded-2xl shadow-sm border border-slate-200 dark:border-slate-800 flex items-center justify-between transition-colors">
           <div className="flex items-center gap-3">
-            <img src="/logo.png" alt="Logo" className="w-10 h-10 object-contain" />
+            <img
+              src={`${import.meta.env.BASE_URL}logo.png`}
+              alt="Logo"
+              className="w-10 h-10 object-contain"
+            />
             <div>
               <div className="flex items-center gap-2">
                 <h1 className="text-xl font-bold text-slate-900 dark:text-white tracking-tight">Plot Digitizer</h1>
