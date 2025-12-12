@@ -1,10 +1,11 @@
 
 import React, { useEffect, useRef } from 'react';
-import { Plus, ScanLine, Image as ImageIcon, Sun, Moon, Trash2, Download, Database, Undo, Redo, Camera, Copy, ImageOff, Save, FolderOpen, X, MousePointer2, Magnet } from 'lucide-react';
+import { Plus, ScanLine, Image as ImageIcon, Sun, Moon, Trash2, Download, Database, Undo, Redo, Camera, Copy, ImageOff, Save, FolderOpen, X, MousePointer2, Magnet, HelpCircle } from 'lucide-react';
 import { DigitizerCanvas } from './DigitizerCanvas';
 import type { DigitizerHandle } from './DigitizerCanvas';
 import { useStore } from './store';
 import { SnappingTool } from './components/SnappingTool';
+import { HelpModal } from './components/HelpModal';
 import testPlotUrl from './assets/test_plot.svg';
 import { generateTableData, downloadCSV } from './utils/export';
 import { loadPdfDocument } from './utils/pdf-utils';
@@ -15,6 +16,7 @@ export default function App() {
   const digitizerRef = useRef<DigitizerHandle>(null);
   const [pdfDocument, setPdfDocument] = React.useState<pdfjsLib.PDFDocumentProxy | null>(null);
   const [isSnappingToolOpen, setIsSnappingToolOpen] = React.useState(false);
+  const [isHelpOpen, setIsHelpOpen] = React.useState(false);
 
   const {
     activeWorkspaceId,
@@ -48,6 +50,7 @@ export default function App() {
     toggleSeriesLabels,
     deleteSelectedPoints,
     nudgeSelection,
+    toggleSeriesPointCoordinates,
   } = useStore();
 
   const activeWorkspace = workspaces.find(w => w.id === activeWorkspaceId);
@@ -278,18 +281,20 @@ export default function App() {
               <p className="text-xs text-slate-500 dark:text-slate-400">Extract data from images</p>
             </div>
           </div>
-          <button
-            onClick={toggleTheme}
-            className="group relative flex items-center gap-2 px-2 py-1.5 rounded-lg bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 hover:border-slate-300 dark:hover:border-slate-600 transition-all outline-none focus:ring-2 focus:ring-blue-500/20"
-            title="Toggle Theme"
-          >
-            <div className={`p-1 rounded-md transition-all ${theme === 'light' ? 'bg-white shadow-sm text-amber-500' : 'text-slate-400'}`}>
-              <Sun className="h-4 w-4" />
-            </div>
-            <div className={`p-1 rounded-md transition-all ${theme === 'dark' ? 'bg-slate-700 shadow-sm text-blue-400' : 'text-slate-400'}`}>
-              <Moon className="h-4 w-4" />
-            </div>
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={toggleTheme}
+              className="group relative flex items-center gap-2 px-2 py-1.5 rounded-lg bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 hover:border-slate-300 dark:hover:border-slate-600 transition-all outline-none focus:ring-2 focus:ring-blue-500/20"
+              title="Toggle Theme"
+            >
+              <div className={`p-1 rounded-md transition-all ${theme === 'light' ? 'bg-white shadow-sm text-amber-500' : 'text-slate-400'}`}>
+                <Sun className="h-4 w-4" />
+              </div>
+              <div className={`p-1 rounded-md transition-all ${theme === 'dark' ? 'bg-slate-700 shadow-sm text-blue-400' : 'text-slate-400'}`}>
+                <Moon className="h-4 w-4" />
+              </div>
+            </button>
+          </div>
         </div>
 
 
@@ -555,6 +560,18 @@ export default function App() {
                         className="checkbox"
                       />
                       Show Label
+                    </label>
+                  </div>
+
+                  <div className="flex items-center justify-between">
+                    <label className="text-xs font-medium text-slate-700 dark:text-slate-300 flex items-center gap-2 cursor-pointer select-none">
+                      <input
+                        type="checkbox"
+                        checked={!!activeSeries.showPointCoordinates}
+                        onChange={() => toggleSeriesPointCoordinates(activeSeriesId)}
+                        className="checkbox"
+                      />
+                      Show Values
                     </label>
                   </div>
 
@@ -833,6 +850,16 @@ export default function App() {
                 <Plus className="h-3.5 w-3.5" />
               </button>
             </div>
+
+            <div className="flex-1" />
+
+            <button
+              onClick={() => setIsHelpOpen(true)}
+              className="p-1.5 rounded-md text-slate-500 hover:text-blue-600 dark:text-slate-400 dark:hover:text-blue-400 hover:bg-slate-200 dark:hover:bg-slate-700 transition"
+              title="Help & Information"
+            >
+              <HelpCircle className="w-4 h-4" />
+            </button>
           </div>
 
           <div className="flex-1 relative overflow-hidden">
@@ -854,6 +881,10 @@ export default function App() {
         seriesId={activeSeriesId}
         isOpen={isSnappingToolOpen}
         onClose={() => setIsSnappingToolOpen(false)}
+      />
+      <HelpModal
+        isOpen={isHelpOpen}
+        onClose={() => setIsHelpOpen(false)}
       />
     </div>
   );

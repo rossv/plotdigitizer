@@ -48,6 +48,7 @@ export type Series = {
   fitConfig: CurveFitConfig;
   fitResult?: CurveFitResult;
   showLabels?: boolean;
+  showPointCoordinates?: boolean; // New property
   labelPosition?: { x: number; y: number };
 };
 

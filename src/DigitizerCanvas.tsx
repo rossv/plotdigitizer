@@ -403,7 +403,8 @@ export const DigitizerCanvas = forwardRef<DigitizerHandle>((_, ref) => {
     series.flatMap((ser) => ser.points.map((p) => ({
       ...p,
       color: ser.color,
-      selected: selectedPointIds?.includes(p.id)
+      selected: selectedPointIds?.includes(p.id),
+      showPointCoordinates: ser.showPointCoordinates,
     }))),
     [series, selectedPointIds]
   );
@@ -766,6 +767,26 @@ export const DigitizerCanvas = forwardRef<DigitizerHandle>((_, ref) => {
               }}
             />
           ))}
+
+          {/* Point Coordinate Labels */}
+          {points.map((p) => {
+            if (!p.showPointCoordinates || p.dataX === undefined || p.dataY === undefined) return null;
+            return (
+              <Text
+                key={`coord-${p.id}`}
+                x={p.x + 8 / currentScale}
+                y={p.y - 8 / currentScale} // Offset slightly top-right
+                text={`(${p.dataX.toFixed(3)}, ${p.dataY.toFixed(3)})`}
+                fill={'white'}
+                stroke={'black'}
+                strokeWidth={2 / currentScale}
+                fillAfterStrokeEnabled={true}
+                fontSize={10 / currentScale}
+                fontStyle="bold"
+                listening={false}
+              />
+            );
+          })}
         </Layer>
 
         {/* Series Labels Layer */}

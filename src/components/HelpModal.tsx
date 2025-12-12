@@ -1,0 +1,197 @@
+import React, { useState } from 'react';
+import { X, HelpCircle, FileText, Info, GitCommit } from 'lucide-react';
+
+interface HelpModalProps {
+    isOpen: boolean;
+    onClose: () => void;
+}
+
+const changelog = [
+    { hash: 'a113a8e', message: 'feat: implement initial plot digitizer functionality including calibration, pixel-data conversion, and point snapping' },
+    { hash: '0280916', message: 'feat: Implement PDF support, project save/load, workspace management, and calibration input UI with undo/redo functionality.' },
+    { hash: '4dc23e1', message: 'Merge pull request #10 from rossv/codex/2025-12-12-15-33-32-fix-unused-variable-error-in-app.tsx' },
+    { hash: 'cb19949', message: 'Fix build by removing unused imageUrl and adding Vitest types' },
+    { hash: '4e53dc1', message: 'Merge pull request #9 from rossv/codex/2025-12-12-15-29-11-add-configure-pages-step-in-deploy.yml' },
+    { hash: 'd939d14', message: 'Add configure pages step to deploy workflow' },
+    { hash: '4559378', message: 'Merge pull request #5 from rossv/codex/2025-12-12-15-02-33-add-tests-for-generatecsv-function' },
+    { hash: '15c4683', message: 'Merge pull request #6 from rossv/codex/2025-12-12-15-02-36-update-readme.md-for-digitize-toggle' },
+    { hash: '6004d0a', message: 'Merge pull request #7 from rossv/codex/2025-12-12-15-02-38-adjust-undo-implementation-in-store' },
+    { hash: '0a2f3fe', message: 'Merge pull request #8 from rossv/codex/2025-12-12-15-02-40-update-reticle-terminology-in-comment' },
+    { hash: '4112996', message: 'Fix magnifier overlay reticle comment' },
+    { hash: 'bdb6bf7', message: 'Fix undo boundary handling' },
+    { hash: 'f82920a', message: 'Update digitizing instructions' },
+    { hash: 'ed5dd40', message: 'Add Vitest coverage for generateCSV' },
+    { hash: 'cfd2abe', message: 'feat: Implement initial plot digitizer application with core UI, canvas, and state management.' },
+];
+
+export const HelpModal: React.FC<HelpModalProps> = ({ isOpen, onClose }) => {
+    const [activeTab, setActiveTab] = useState<'usage' | 'changelog' | 'about'>('usage');
+
+    if (!isOpen) return null;
+
+    return (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
+            <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-xl w-full max-w-2xl h-[80vh] border border-slate-200 dark:border-slate-800 flex flex-col overflow-hidden animate-in fade-in zoom-in-95 duration-200">
+
+                {/* Header */}
+                <div className="px-4 py-3 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between bg-slate-50/50 dark:bg-slate-800/30">
+                    <div className="flex items-center gap-2 text-slate-800 dark:text-slate-200 font-semibold">
+                        <HelpCircle className="w-5 h-5 text-blue-500" />
+                        <h3>Help & Information</h3>
+                    </div>
+                    <button
+                        onClick={onClose}
+                        className="p-1 rounded-lg text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-800 transition"
+                    >
+                        <X className="w-4 h-4" />
+                    </button>
+                </div>
+
+                {/* Tabs */}
+                <div className="px-4 pt-4 border-b border-slate-100 dark:border-slate-800 flex gap-4">
+                    <button
+                        onClick={() => setActiveTab('usage')}
+                        className={`pb-2 text-sm font-medium transition relative ${activeTab === 'usage'
+                            ? 'text-blue-600 dark:text-blue-400'
+                            : 'text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300'
+                            }`}
+                    >
+                        <div className="flex items-center gap-2">
+                            <FileText className="w-4 h-4" />
+                            Usage
+                        </div>
+                        {activeTab === 'usage' && (
+                            <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-blue-600 dark:bg-blue-400 rounded-t-full" />
+                        )}
+                    </button>
+                    <button
+                        onClick={() => setActiveTab('changelog')}
+                        className={`pb-2 text-sm font-medium transition relative ${activeTab === 'changelog'
+                            ? 'text-blue-600 dark:text-blue-400'
+                            : 'text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300'
+                            }`}
+                    >
+                        <div className="flex items-center gap-2">
+                            <GitCommit className="w-4 h-4" />
+                            Changelog
+                        </div>
+                        {activeTab === 'changelog' && (
+                            <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-blue-600 dark:bg-blue-400 rounded-t-full" />
+                        )}
+                    </button>
+                    <button
+                        onClick={() => setActiveTab('about')}
+                        className={`pb-2 text-sm font-medium transition relative ${activeTab === 'about'
+                            ? 'text-blue-600 dark:text-blue-400'
+                            : 'text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300'
+                            }`}
+                    >
+                        <div className="flex items-center gap-2">
+                            <Info className="w-4 h-4" />
+                            About
+                        </div>
+                        {activeTab === 'about' && (
+                            <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-blue-600 dark:bg-blue-400 rounded-t-full" />
+                        )}
+                    </button>
+                </div>
+
+                {/* Content */}
+                <div className="flex-1 overflow-y-auto p-6">
+                    {activeTab === 'usage' && (
+                        <div className="space-y-6 text-slate-600 dark:text-slate-300 text-sm leading-relaxed">
+                            <section>
+                                <h4 className="font-bold text-slate-800 dark:text-slate-100 mb-2">Getting Started</h4>
+                                <p>
+                                    Welcome to Plot Digitizer! This tool helps you extract numerical data from images of plots and graphs.
+                                    Follow these steps to digitize your data:
+                                </p>
+                            </section>
+
+                            <section>
+                                <h4 className="font-bold text-slate-800 dark:text-slate-100 mb-2">1. Load Your Image</h4>
+                                <ul className="list-disc pl-5 space-y-1">
+                                    <li>Drag and drop an image file (PNG, JPG, SVG) onto the canvas, or click "Load Image / PDF" in the sidebar.</li>
+                                    <li>You can also paste an image directly from your clipboard (Ctrl+V).</li>
+                                </ul>
+                            </section>
+
+                            <section>
+                                <h4 className="font-bold text-slate-800 dark:text-slate-100 mb-2">2. Calibrate Axes</h4>
+                                <ul className="list-disc pl-5 space-y-1">
+                                    <li>Click "Calibrate X" in the sidebar. Click two points on the X-axis of your image and enter their values.</li>
+                                    <li>Click "Calibrate Y" (or standard Y axis). Click two points on the Y-axis and enter their values.</li>
+                                    <li>Ensure axes names and log scales are set correctly if needed.</li>
+                                </ul>
+                            </section>
+
+                            <section>
+                                <h4 className="font-bold text-slate-800 dark:text-slate-100 mb-2">3. Digitize Points</h4>
+                                <ul className="list-disc pl-5 space-y-1">
+                                    <li>Select a Data Series (or add a new one).</li>
+                                    <li>Click "Digitize" mode to start adding points. Click on the data points in the image.</li>
+                                    <li>Use "Trace" mode (Wand) to automatically detect lines by clicking and dragging along a curve.</li>
+                                    <li>Use "Select / Edit" to move or delete existing points.</li>
+                                </ul>
+                            </section>
+
+                            <section>
+                                <h4 className="font-bold text-slate-800 dark:text-slate-100 mb-2">4. Export Data</h4>
+                                <ul className="list-disc pl-5 space-y-1">
+                                    <li>The data table in the sidebar updates automatically.</li>
+                                    <li>Click the Copy button to copy data to clipboard.</li>
+                                    <li>Click the Download button to export as CSV.</li>
+                                </ul>
+                            </section>
+                        </div>
+                    )}
+
+                    {activeTab === 'changelog' && (
+                        <div className="space-y-4">
+                            {changelog.map((commit) => (
+                                <div key={commit.hash} className="flex gap-3 text-sm border-b border-slate-100 dark:border-slate-800 pb-3 last:border-0 last:pb-0">
+                                    <span className="font-mono text-xs text-blue-600 dark:text-blue-400 shrink-0 select-all">{commit.hash}</span>
+                                    <span className="text-slate-600 dark:text-slate-300">{commit.message}</span>
+                                </div>
+                            ))}
+                        </div>
+                    )}
+
+                    {activeTab === 'about' && (
+                        <div className="space-y-6 text-center py-8">
+                            <div>
+                                <img src="/logo.png" alt="Logo" className="w-20 h-20 mx-auto mb-4 object-contain" />
+                                <h2 className="text-2xl font-bold text-slate-900 dark:text-white mb-2">Plot Digitizer</h2>
+                                <span className="px-2 py-1 rounded-md bg-blue-100 dark:bg-blue-500/20 text-blue-600 dark:text-blue-300 text-xs font-bold tracking-wide uppercase border border-blue-200 dark:border-blue-500/30">
+                                    Version 1.0.0
+                                </span>
+                            </div>
+
+                            <div className="max-w-md mx-auto text-slate-600 dark:text-slate-400 text-sm">
+                                <p className="mb-4">
+                                    A professional tool designed to help researchers, students, and engineers extract precise data from plots, charts, and graphs.
+                                </p>
+                            </div>
+
+                            <div className="pt-6 border-t border-slate-100 dark:border-slate-800">
+                                <h4 className="text-xs font-semibold text-slate-500 dark:text-slate-500 uppercase tracking-wider mb-2">Created By</h4>
+                                <p className="text-slate-800 dark:text-slate-200 font-medium">Ross Volkwein</p>
+                            </div>
+                        </div>
+                    )}
+                </div>
+
+                {/* Footer */}
+                <div className="p-4 bg-slate-50 dark:bg-slate-900/50 border-t border-slate-100 dark:border-slate-800 flex justify-end">
+                    <button
+                        onClick={onClose}
+                        className="px-6 py-2 rounded-xl text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 shadow-sm transition"
+                    >
+                        Close
+                    </button>
+                </div>
+
+            </div>
+        </div>
+    );
+};

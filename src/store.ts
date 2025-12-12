@@ -97,6 +97,7 @@ interface StoreState {
   updatePointPosition: (pointId: string, px: number, py: number) => void;
   nudgeSelection: (dx: number, dy: number) => void;
   snapSeriesPoints: (seriesId: string, config: SnapConfig) => void;
+  toggleSeriesPointCoordinates: (seriesId: string) => void;
 }
 
 // --- Helpers ---
@@ -190,6 +191,7 @@ const createInitialWorkspace = (name: string): Workspace => ({
       yAxisId: defaultYAxisId,
       fitConfig: { enabled: false, type: 'linear', interceptMode: 'auto' },
       showLabels: false,
+      showPointCoordinates: false,
     },
   ],
   activeSeriesId: 'series-1',
@@ -433,6 +435,7 @@ export const useStore = create<StoreState>((set) => ({
           yAxisId: ws.activeYAxisId || ws.yAxes[0].id,
           fitConfig: { enabled: false, type: 'linear', interceptMode: 'auto' },
           showLabels: false,
+          showPointCoordinates: false,
         },
       ],
       activeSeriesId: id,
@@ -490,6 +493,10 @@ export const useStore = create<StoreState>((set) => ({
 
   toggleSeriesLabels: (seriesId) => set(state => updateActiveWorkspace(state, (ws) => ({
     series: ws.series.map((s) => s.id === seriesId ? { ...s, showLabels: !s.showLabels } : s),
+  }))),
+
+  toggleSeriesPointCoordinates: (seriesId) => set(state => updateActiveWorkspace(state, (ws) => ({
+    series: ws.series.map((s) => s.id === seriesId ? { ...s, showPointCoordinates: !s.showPointCoordinates } : s),
   }))),
 
   addPoint: (px, py) => set(state => updateActiveWorkspace(state, (ws) => {
