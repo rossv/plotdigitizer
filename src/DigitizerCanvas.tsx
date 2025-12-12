@@ -105,7 +105,7 @@ export interface DigitizerHandle {
 }
 
 export const DigitizerCanvas = forwardRef<DigitizerHandle>((_, ref) => {
-  const { imageUrl, mode, addPoint, setPendingCalibrationPoint, xAxis, xAxisName, series, yAxes, activeYAxisId } = useStore();
+  const { imageUrl, mode, addPoint, setPendingCalibrationPoint, xAxis, xAxisName, series, yAxes, activeYAxisId, updateSeriesLabelPosition } = useStore();
   const [image] = useImage(imageUrl || '', 'anonymous');
   const stageRef = useRef<KonvaStage | null>(null);
   const containerRef = useRef<HTMLDivElement | null>(null);
@@ -501,7 +501,7 @@ export const DigitizerCanvas = forwardRef<DigitizerHandle>((_, ref) => {
           {yAxes.map((axis) => {
             const { p1, p2 } = axis.calibration;
             const isActive = axis.id === activeYAxisId;
-            const color = isActive ? '#ef4444' : '#f87171';
+            const color = axis.color;
             const opacity = isActive ? 1 : 0.6;
 
             return (
@@ -594,37 +594,53 @@ export const DigitizerCanvas = forwardRef<DigitizerHandle>((_, ref) => {
         <Layer>
           {series.map((ser) => {
             if (!ser.showLabels || ser.points.length === 0) return null;
-            // Use the center point for the label
             const centerIndex = Math.floor(ser.points.length / 2);
             const p = ser.points[centerIndex];
+            const labelX = ser.labelPosition?.x ?? p.x;
+            const labelY = ser.labelPosition?.y ?? p.y;
+            const isDragged = ser.labelPosition !== undefined;
 
             return (
-              <Label
-                key={`label-${ser.id}`}
-                x={p.x}
-                y={p.y}
-                listening={false}
-              >
-                <Tag
-                  fill={ser.color}
-                  pointerDirection="down"
-                  pointerWidth={10}
-                  pointerHeight={10}
-                  lineJoin="round"
-                  shadowColor="black"
-                  shadowBlur={5}
-                  shadowOffsetX={2}
-                  shadowOffsetY={2}
-                  shadowOpacity={0.2}
-                />
-                <Text
-                  text={ser.name}
-                  fontFamily="sans-serif"
-                  fontSize={14 / currentScale}
-                  padding={4}
-                  fill="white"
-                />
-              </Label>
+              <Group key={`label-group-${ser.id}`}>
+                {isDragged && (
+                  <KonvaLine
+                    points={[p.x, p.y, labelX, labelY]}
+                    stroke={ser.color}
+                    strokeWidth={1 / currentScale}
+                    dash={[4, 4]}
+                    listening={false}
+                  />
+                )}
+                <Label
+                  x={labelX}
+                  y={labelY}
+                  draggable
+                  onDragEnd={(e) => {
+                    updateSeriesLabelPosition(ser.id, { x: e.target.x(), y: e.target.y() });
+                  }}
+                >
+                  <Tag
+                    fill={ser.color}
+                    pointerDirection="down"
+                    pointerWidth={isDragged ? 0 : 25 / currentScale}
+                    pointerHeight={isDragged ? 0 : 80 / currentScale}
+                    lineJoin="round"
+                    shadowColor="black"
+                    shadowBlur={5}
+                    shadowOffsetX={2}
+                    shadowOffsetY={2}
+                    shadowOpacity={0.2}
+                    cornerRadius={4}
+                  />
+                  <Text
+                    text={ser.name}
+                    fontFamily="sans-serif"
+                    fontSize={14 / currentScale}
+                    padding={6}
+                    fill="white"
+                  />
+                </Label>
+              </Group>
             );
           })}
         </Layer>

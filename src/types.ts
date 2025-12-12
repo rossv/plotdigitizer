@@ -19,6 +19,7 @@ export type AxisCalibration = {
 export type YAxisDefinition = {
   id: string;
   name: string;
+  color: string;
   calibration: AxisCalibration;
 };
 
@@ -47,6 +48,7 @@ export type Series = {
   fitConfig: CurveFitConfig;
   fitResult?: CurveFitResult;
   showLabels?: boolean;
+  labelPosition?: { x: number; y: number };
 };
 
 export type AppMode = 'IDLE' | 'CALIBRATE_X' | 'CALIBRATE_Y' | 'DIGITIZE' | 'TRACE';

@@ -52,6 +52,7 @@ interface AppState {
   theme: 'light' | 'dark';
   toggleTheme: () => void;
 
+
   updateCalibrationPointPosition: (
     axisType: 'X' | 'Y',
     axisId: string | null,
@@ -59,6 +60,8 @@ interface AppState {
     newPx: number,
     newPy: number
   ) => void;
+
+  updateSeriesLabelPosition: (seriesId: string, position: { x: number; y: number } | undefined) => void;
 }
 
 const initialAxis: AxisCalibration = {
@@ -232,6 +235,7 @@ export const useStore = create<AppState>((set, get) => ({
     {
       id: defaultYAxisId,
       name: 'Y Axis 1',
+      color: '#ef4444',
       calibration: { ...initialAxis }
     }
   ],
@@ -243,6 +247,7 @@ export const useStore = create<AppState>((set, get) => ({
       yAxes: [...state.yAxes, {
         id,
         name: `Y Axis ${state.yAxes.length + 1}`,
+        color: `#${Math.floor(Math.random() * 16777215).toString(16).padStart(6, '0')}`,
         calibration: { ...initialAxis }
       }],
       activeYAxisId: id // auto-select new axis
@@ -325,9 +330,41 @@ export const useStore = create<AppState>((set, get) => ({
 
   setActiveSeries: (id) => set({ activeSeriesId: id }),
 
-  setSeriesYAxis: (seriesId, axisId) => set(state => ({
-    series: state.series.map(s => s.id === seriesId ? { ...s, yAxisId: axisId } : s)
-  })),
+  setSeriesYAxis: (seriesId, axisId) => set(state => {
+    const yAxis = state.yAxes.find(y => y.id === axisId)?.calibration;
+
+    // If we can't find the axis (shouldn't happen) or it's not calibrated, 
+    // we still update the ID, but maybe we can't calculate values yet.
+    // However, existing points might need their data cleared if axis is uncalibrated?
+    // For now, we'll attempt calculation if possible, or fallback to existing behavior.
+
+    const updatedSeries = state.series.map(s => {
+      if (s.id !== seriesId) return s;
+
+      // If we found the new axis, recalculate all points
+      let updatedPoints = s.points;
+      if (yAxis) {
+        updatedPoints = s.points.map(p => {
+          // We need to re-calculate based on new axis
+          // Note: This relies on pixel coordinates being the source of truth
+          const coords = pixelToData(p.x, p.y, state.xAxis, yAxis);
+          if (coords) {
+            return { ...p, dataX: coords.x, dataY: coords.y };
+          }
+          return p; // Keep old data if calculation fails? Or set undefined?
+          // If we switch to an uncalibrated axis, coords will be null/undefined likely.
+          // pixelToData returns null if calibration is incomplete.
+          // In that case, we should probably set dataX/dataY to undefined?
+          // Existing points might have valid data from previous axis.
+          // If we switch to uncalibrated axis, retaining numbers might be misleading.
+        });
+      }
+
+      return updateSeriesFit({ ...s, yAxisId: axisId, points: updatedPoints });
+    });
+
+    return { series: updatedSeries };
+  }),
 
   updateSeriesName: (id, name) => set((state) => {
     const updatedSeries = state.series.map((s) => s.id === id ? { ...s, name } : s);
@@ -577,4 +614,8 @@ export const useStore = create<AppState>((set, get) => ({
       return { yAxes: updatedYAxes, series: updatedSeries };
     }
   }),
+
+  updateSeriesLabelPosition: (seriesId, position) => set(state => ({
+    series: state.series.map(s => s.id === seriesId ? { ...s, labelPosition: position } : s)
+  })),
 }));

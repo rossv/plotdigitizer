@@ -243,7 +243,13 @@ export default function App() {
                         }`}
                     >
                       <div className="flex items-center gap-2 mb-2">
-                        <div className={`w-2 h-2 rounded-full shrink-0 ${y.calibration.slope ? 'bg-emerald-500' : 'bg-slate-300 dark:bg-slate-600'}`} />
+                        <div
+                          className="w-2.5 h-2.5 rounded-full shrink-0 border-2"
+                          style={{
+                            borderColor: y.color,
+                            backgroundColor: y.calibration.slope ? y.color : 'transparent'
+                          }}
+                        />
                         <input
                           type="text"
                           value={y.name}
@@ -337,6 +343,21 @@ export default function App() {
                   </button>
                 </div>
 
+                <div className="flex items-center gap-2">
+                  <span className="text-xs font-medium text-slate-500 dark:text-slate-400 whitespace-nowrap">Y Axis:</span>
+                  <select
+                    value={activeSeries.yAxisId}
+                    onChange={(e) => setSeriesYAxis(activeSeriesId, e.target.value)}
+                    className="flex-1 text-xs px-2 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-200 focus:outline-none focus:border-blue-500"
+                  >
+                    {yAxes.map((axis) => (
+                      <option key={axis.id} value={axis.id}>
+                        {axis.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
                 <div className="bg-slate-50 dark:bg-slate-800/50 p-2.5 rounded-lg border border-slate-100 dark:border-slate-800 space-y-2">
                   <div className="flex items-center justify-between">
                     <label className="text-xs font-medium text-slate-700 dark:text-slate-300 flex items-center gap-2 cursor-pointer select-none">
@@ -344,7 +365,7 @@ export default function App() {
                         type="checkbox"
                         checked={activeSeries.fitConfig.enabled}
                         onChange={(e) => setSeriesFitConfig(activeSeriesId, { enabled: e.target.checked })}
-                        className="rounded text-blue-600 focus:ring-blue-500 h-3.5 w-3.5 bg-white dark:bg-slate-900 border-slate-300 dark:border-slate-600"
+                        className="checkbox"
                       />
                       Fit Curve
                     </label>
@@ -361,7 +382,7 @@ export default function App() {
                         type="checkbox"
                         checked={!!activeSeries.showLabels}
                         onChange={() => toggleSeriesLabels(activeSeriesId)}
-                        className="rounded text-blue-600 focus:ring-blue-500 h-3.5 w-3.5 bg-white dark:bg-slate-900 border-slate-300 dark:border-slate-600"
+                        className="checkbox"
                       />
                       Show Label
                     </label>
@@ -445,7 +466,7 @@ export default function App() {
           {/* Points Bin */}
           <div className="flex-1 min-h-[150px] p-4 bg-white dark:bg-slate-900 rounded-2xl shadow-sm border border-slate-200 dark:border-slate-800 flex flex-col transition-colors">
             <div className="flex items-center justify-between mb-2">
-              <h3 className="font-semibold text-slate-800 dark:text-slate-200 text-sm">Points <span className="ml-1 text-xs font-normal text-slate-400">({activeSeries?.points.length ?? 0})</span></h3>
+              <h3 className="font-semibold text-slate-800 dark:text-slate-200 text-sm">Points <span className="ml-1 text-xs font-normal text-slate-400">({series.reduce((acc, s) => acc + s.points.length, 0)})</span></h3>
               <div className="flex gap-1">
                 {/* Export Mini Buttons */}
                 <button
@@ -469,26 +490,71 @@ export default function App() {
             </div>
 
             <div className="flex-1 border border-slate-100 dark:border-slate-800 rounded-lg overflow-hidden flex flex-col bg-slate-50 dark:bg-slate-800/30">
-              <div className={`grid ${activeSeries?.fitConfig.enabled ? 'grid-cols-3' : 'grid-cols-2'} bg-slate-100 dark:bg-slate-800 border-b border-slate-200 dark:border-slate-700 text-[10px] uppercase font-bold text-slate-500 dark:text-slate-400 px-3 py-1.5`}>
-                <span>X</span>
-                <span>Y</span>
-                {activeSeries?.fitConfig.enabled && <span>Fit</span>}
-              </div>
-              <div className="flex-1 overflow-auto divide-y divide-slate-100 dark:divide-slate-800">
-                {activeSeries?.points.map((p) => (
-                  <div key={p.id} className={`grid ${activeSeries?.fitConfig.enabled ? 'grid-cols-3' : 'grid-cols-2'} px-3 py-1 text-xs text-slate-600 dark:text-slate-300 hover:bg-white dark:hover:bg-slate-700/50 transition-colors`}>
-                    <span className="font-mono">{p.dataX?.toFixed(3)}</span>
-                    <span className="font-mono">{p.dataY?.toFixed(3)}</span>
-                    {activeSeries?.fitConfig.enabled && (
-                      <span className="font-mono text-blue-600 dark:text-blue-400">{p.fittedY?.toFixed(3) ?? '-'}</span>
+              <div className="flex-1 overflow-auto">
+                <table className="min-w-full text-left border-collapse">
+                  <thead className="bg-slate-100 dark:bg-slate-800 sticky top-0 z-10 shadow-sm">
+                    <tr>
+                      {series.map(s => (
+                        <th key={s.id} colSpan={2 + (s.fitConfig.enabled ? 1 : 0)} className="px-2 py-1.5 border-b border-r border-slate-200 dark:border-slate-700 last:border-r-0 bg-slate-50 dark:bg-slate-800/50">
+                          <div className="text-xs font-bold text-slate-700 dark:text-slate-200 text-center truncate">
+                            {s.name}
+                          </div>
+                        </th>
+                      ))}
+                    </tr>
+                    <tr>
+                      {series.map(s => {
+                        const yAxisName = yAxes.find(y => y.id === s.yAxisId)?.name || 'Y Axis';
+                        return (
+                          <React.Fragment key={s.id}>
+                            <th className="px-2 py-1 border-b border-r border-slate-200 dark:border-slate-700 last:border-r-0">
+                              <div className="text-[10px] font-medium text-slate-500 dark:text-slate-400 uppercase text-center">{xAxisName}</div>
+                            </th>
+                            <th className="px-2 py-1 border-b border-r border-slate-200 dark:border-slate-700 last:border-r-0">
+                              <div className="text-[10px] font-medium text-slate-500 dark:text-slate-400 uppercase text-center">{yAxisName}</div>
+                            </th>
+                            {s.fitConfig.enabled && (
+                              <th className="px-2 py-1 border-b border-r border-slate-200 dark:border-slate-700 last:border-r-0">
+                                <div className="text-[10px] font-medium text-blue-600 dark:text-blue-400 uppercase text-center">Fit</div>
+                              </th>
+                            )}
+                          </React.Fragment>
+                        );
+                      })}
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+                    {Array.from({ length: Math.max(0, ...series.map(s => s.points.length)) }).map((_, i) => (
+                      <tr key={i} className="hover:bg-white dark:hover:bg-slate-700/50 transition-colors">
+                        {series.map(s => {
+                          const p = s.points[i];
+                          return (
+                            <React.Fragment key={s.id}>
+                              <td className="px-2 py-1 text-xs font-mono text-slate-600 dark:text-slate-300 border-r border-slate-100 dark:border-slate-800 last:border-r-0 text-right">
+                                {p?.dataX !== undefined ? p.dataX.toFixed(3) : ''}
+                              </td>
+                              <td className="px-2 py-1 text-xs font-mono text-slate-600 dark:text-slate-300 border-r border-slate-100 dark:border-slate-800 last:border-r-0 text-right">
+                                {p?.dataY !== undefined ? p.dataY.toFixed(3) : ''}
+                              </td>
+                              {s.fitConfig.enabled && (
+                                <td className="px-2 py-1 text-xs font-mono text-blue-600 dark:text-blue-400 border-r border-slate-100 dark:border-slate-800 last:border-r-0 text-right">
+                                  {p?.fittedY !== undefined ? p.fittedY.toFixed(3) : '-'}
+                                </td>
+                              )}
+                            </React.Fragment>
+                          );
+                        })}
+                      </tr>
+                    ))}
+                    {!series.some(s => s.points.length > 0) && (
+                      <tr>
+                        <td colSpan={series.reduce((acc, s) => acc + 2 + (s.fitConfig.enabled ? 1 : 0), 0)} className="p-4 text-center text-slate-400 dark:text-slate-500 text-xs italic">
+                          No points captured
+                        </td>
+                      </tr>
                     )}
-                  </div>
-                ))}
-                {!activeSeries?.points.length && (
-                  <div className="p-4 text-center text-slate-400 dark:text-slate-500 text-xs italic">
-                    No points captured
-                  </div>
-                )}
+                  </tbody>
+                </table>
               </div>
             </div>
           </div>
