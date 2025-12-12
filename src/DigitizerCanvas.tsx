@@ -1,43 +1,222 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useRef, useState, useImperativeHandle, forwardRef } from 'react';
 import type { KonvaEventObject } from 'konva/lib/Node';
 import type { Stage as KonvaStage } from 'konva/lib/Stage';
-import { Circle, Group, Image as KonvaImage, Line as KonvaLine, Layer, Stage, Text } from 'react-konva';
+import { Circle, Group, Image as KonvaImage, Line as KonvaLine, Layer, Stage, Text, Label, Tag, Rect } from 'react-konva';
 import useImage from 'use-image';
 import { CalibrationInput } from './components/CalibrationInput';
 import { traceLine } from './utils/trace';
 import { useStore } from './store';
 
-export const DigitizerCanvas: React.FC = () => {
-  const { imageUrl, mode, addPoint, setPendingCalibrationPoint, xAxis, activeSeriesId, series, fittedCurves } = useStore();
+interface CalibrationHandleProps {
+  x: number;
+  y: number;
+  label: string;
+  color: string;
+  axisType: 'X' | 'Y';
+  axisId: string | null;
+  pointIndex: 1 | 2;
+  scale: number;
+  xAxis: any;
+  yAxes: any[];
+}
+
+const CalibrationHandle: React.FC<CalibrationHandleProps> = ({ x, y, label, color, axisType, axisId, pointIndex, scale, xAxis, yAxes }) => {
+  const { updateCalibrationPointPosition } = useStore();
+  const size = 12 / scale; // Slightly larger for better visibility
+  const strokeWidth = 2 / scale;
+
+  return (
+    <Group
+      x={x}
+      y={y}
+      draggable
+      dragBoundFunc={(pos) => {
+        let newX = pos.x;
+        let newY = pos.y;
+        const SNAP_THRESHOLD = 20 / scale; // generous threshold
+
+        // candidates for snapping
+        const targets: { x?: number, y?: number }[] = [];
+
+        if (axisType === 'X') {
+          const other = pointIndex === 1 ? xAxis.p2 : xAxis.p1;
+          if (other) {
+            targets.push({ x: other.px, y: other.py });
+          }
+        } else {
+          // Current Y Axis
+          const currentAxis = yAxes.find((a: any) => a.id === axisId);
+          const other = pointIndex === 1 ? currentAxis?.calibration.p2 : currentAxis?.calibration.p1;
+          if (other) {
+            targets.push({ x: other.px, y: other.py });
+          }
+          // Other Y Axes (Snap Y to others)
+          yAxes.forEach((ax: any) => {
+            if (ax.id === axisId) return;
+            if (ax.calibration.p1) targets.push({ y: ax.calibration.p1.py });
+            if (ax.calibration.p2) targets.push({ y: ax.calibration.p2.py });
+          });
+        }
+
+        for (const t of targets) {
+          if (t.x !== undefined) {
+            if (Math.abs(t.x - newX) < SNAP_THRESHOLD) {
+              newX = t.x;
+            }
+          }
+          if (t.y !== undefined) {
+            if (Math.abs(t.y - newY) < SNAP_THRESHOLD) {
+              newY = t.y;
+            }
+          }
+        }
+
+        return { x: newX, y: newY };
+      }}
+      onDragEnd={(e) => {
+        updateCalibrationPointPosition(axisType, axisId, pointIndex, e.target.x(), e.target.y());
+      }}
+    >
+      <Rect
+        width={size}
+        height={size}
+        offsetX={size / 2}
+        offsetY={size / 2}
+        fill={color}
+        stroke="white"
+        strokeWidth={strokeWidth}
+        shadowColor="black"
+        shadowBlur={2 / scale}
+        shadowOpacity={0.3}
+      />
+      <Text
+        text={label}
+        fill={color}
+        fontSize={12 / scale}
+        y={size / 2 + 3 / scale}
+        x={-size} // visual tweak
+      />
+    </Group>
+  );
+};
+
+export interface DigitizerHandle {
+  toDataURL: () => string | null;
+}
+
+export const DigitizerCanvas = forwardRef<DigitizerHandle>((_, ref) => {
+  const { imageUrl, mode, addPoint, setPendingCalibrationPoint, xAxis, xAxisName, series, yAxes, activeYAxisId } = useStore();
   const [image] = useImage(imageUrl || '', 'anonymous');
   const stageRef = useRef<KonvaStage | null>(null);
   const containerRef = useRef<HTMLDivElement | null>(null);
-  const [size, setSize] = useState({ width: 0, height: 0 });
+  const magnifierRef = useRef<HTMLCanvasElement>(null);
+
   const [currentScale, setCurrentScale] = useState(1);
   const [calibStep, setCalibStep] = useState<1 | 2>(1);
+  const [snapPoint, setSnapPoint] = useState<{ x: number; y: number } | null>(null);
 
-  // Derive active Y axis from active series
-  const activeSeries = series.find(s => s.id === activeSeriesId);
-  const yAxis = activeSeries?.yAxis;
-
-  useEffect(() => {
-    const handleResize = () => {
-      if (containerRef.current) {
-        setSize({
-          width: containerRef.current.clientWidth,
-          height: containerRef.current.clientHeight,
-        });
+  useImperativeHandle(ref, () => ({
+    toDataURL: () => {
+      if (stageRef.current) {
+        return stageRef.current.toDataURL({ pixelRatio: 2 });
       }
-    };
+      return null;
+    }
+  }));
 
-    handleResize();
-    window.addEventListener('resize', handleResize);
-    return () => window.removeEventListener('resize', handleResize);
-  }, []);
+  // Active Y Axis (for calibration display)
+  const activeYAxisDef = yAxes.find(y => y.id === activeYAxisId);
+
 
   useEffect(() => {
     setCalibStep(1);
   }, [mode]);
+
+  // ... (handleStageMouseMove is fine) ...
+
+  const handleStageMouseMove = (e: KonvaEventObject<MouseEvent>) => {
+    const stage = e.target.getStage();
+    if (!stage) return;
+
+    const pointer = stage.getPointerPosition();
+    if (!pointer) return;
+
+    // Snapping Logic (only in calibration modes)
+    if (mode === 'CALIBRATE_X' || mode === 'CALIBRATE_Y') {
+      const relPointer = stage.getRelativePointerPosition();
+      if (relPointer) {
+        const SNAP_THRESHOLD = 10 / currentScale;
+        let closest: { x: number; y: number } | null = null;
+        let minDist = SNAP_THRESHOLD;
+
+        // Collect all potential snap targets
+        const targets: { x: number; y: number }[] = [];
+        if (xAxis.p1) targets.push({ x: xAxis.p1.px, y: xAxis.p1.py });
+        if (xAxis.p2) targets.push({ x: xAxis.p2.px, y: xAxis.p2.py });
+        yAxes.forEach(y => {
+          if (y.calibration.p1) targets.push({ x: y.calibration.p1.px, y: y.calibration.p1.py });
+          if (y.calibration.p2) targets.push({ x: y.calibration.p2.px, y: y.calibration.p2.py });
+        });
+
+        for (const t of targets) {
+          const dist = Math.sqrt((t.x - relPointer.x) ** 2 + (t.y - relPointer.y) ** 2);
+          if (dist < minDist) {
+            minDist = dist;
+            closest = t;
+          }
+        }
+        setSnapPoint(closest);
+      }
+    } else {
+      if (snapPoint) setSnapPoint(null);
+    }
+
+    if (magnifierRef.current && stageRef.current) {
+      const mainCanvas = stageRef.current.content.querySelector('canvas');
+      if (mainCanvas) {
+        const ctx = magnifierRef.current.getContext('2d');
+        if (ctx) {
+          // Settings
+          const size = 150;
+          const zoom = 2; // 2x magnification
+          const srcSize = size / zoom;
+
+          // Clear
+          ctx.fillStyle = '#f0f0f0';
+          ctx.fillRect(0, 0, size, size);
+
+          // Konva handles pixel ratio. The <canvas> width/height attributes might be larger than style/stage size.
+          const pixelRatio = window.devicePixelRatio || 1;
+
+          // Source coordinates on the actual canvas element
+          // NOTE: If snapping, we stick the magnifier to the snap point?
+          // Actually, it's better to stick to the mouse so user sees what is there.
+          // But maybe we can verify snapping visually on the main canvas.
+
+          const sx = pointer.x * pixelRatio - (srcSize * pixelRatio) / 2;
+          const sy = pointer.y * pixelRatio - (srcSize * pixelRatio) / 2;
+          const sWidth = srcSize * pixelRatio;
+          const sHeight = srcSize * pixelRatio;
+
+          ctx.drawImage(
+            mainCanvas,
+            sx, sy, sWidth, sHeight,
+            0, 0, size, size
+          );
+
+          // Draw Reticule (Crosshair)
+          ctx.strokeStyle = 'rgba(255, 0, 0, 0.5)';
+          ctx.lineWidth = 1;
+          ctx.beginPath();
+          ctx.moveTo(size / 2, 0);
+          ctx.lineTo(size / 2, size);
+          ctx.moveTo(0, size / 2);
+          ctx.lineTo(size, size / 2);
+          ctx.stroke();
+        }
+      }
+    }
+  };
 
   const handleStageClick = (e: KonvaEventObject<MouseEvent>) => {
     if (!imageUrl) return;
@@ -51,7 +230,8 @@ export const DigitizerCanvas: React.FC = () => {
       addPoint(ptr.x, ptr.y);
     } else if (mode === 'TRACE') {
       if (!image) return;
-      // Create offscreen canvas to read pixel data
+
+      // Create temporary canvas for pixel reading
       const canvas = document.createElement('canvas');
       canvas.width = image.width;
       canvas.height = image.height;
@@ -59,39 +239,86 @@ export const DigitizerCanvas: React.FC = () => {
       if (!ctx) return;
       ctx.drawImage(image, 0, 0);
 
-      // traceLine expects coords relative to image dimension
-      // ptr.x/y is relative to stage, but since image is at 0,0 and scaled by stage,
-      // we need to be careful.
-      // The Image node in Layer is at 0,0.
-      // ptr is relative to the stage, but "getRelativePointerPosition" returns
-      // coordinates relative to the container *transform*?
-      // Wait, `getRelativePointerPosition` on stage returns pointer relative to stage
-      // accounting for stage scale/pos?
-      // Let's verify:
-      // If stage is scaled 2x, clicking at 100px screen returns 50px stage.
-      // If Image is at 0,0 on Layer, then stage coords == image coords.
-      // YES.
+      const targetColor = { r: 0, g: 0, b: 0 }; // Default black for now, could be dynamic
+      // Get color at click
+      const pData = ctx.getImageData(ptr.x, ptr.y, 1, 1).data;
+      targetColor.r = pData[0];
+      targetColor.g = pData[1];
+      targetColor.b = pData[2];
 
-      // Pick color at the clicked pixel.
-      const pData = ctx.getImageData(Math.round(ptr.x), Math.round(ptr.y), 1, 1).data;
-      const targetColor = { r: pData[0], g: pData[1], b: pData[2] };
-
-      // Run trace with picked color
       const tracedPoints = traceLine(ctx, ptr.x, ptr.y, targetColor, 60);
 
-      const mappedPoints = tracedPoints.map(p => ({ px: p.x, py: p.y }));
+      if (tracedPoints.length === 0) return;
 
-      // Sample down?
-      // For now detailed.
+      // Ask user for number of points
+      // Ask user for number of points
+      const countStr = prompt('How many points do you want to add?', '20');
+      if (!countStr) return;
+      const desiredCount = parseInt(countStr, 10);
+      if (isNaN(desiredCount) || desiredCount < 2) return;
 
-      useStore.getState().addPoints(mappedPoints); // Use getState to avoid adding addPoints to dep array if not needed
+      // 1. Sort by X
+      tracedPoints.sort((a, b) => a.x - b.x);
+
+      // 2. Thin points: Bucket by X (round to nearest pixel) and average Y
+      const buckets = new Map<number, number[]>();
+      for (const p of tracedPoints) {
+        const rx = Math.round(p.x);
+        if (!buckets.has(rx)) buckets.set(rx, []);
+        buckets.get(rx)!.push(p.y);
+      }
+
+      const uniquePoints: { x: number; y: number }[] = [];
+      const sortedXs = Array.from(buckets.keys()).sort((a, b) => a - b);
+
+      for (const x of sortedXs) {
+        const ys = buckets.get(x)!;
+        const avgY = ys.reduce((sum, y) => sum + y, 0) / ys.length;
+        uniquePoints.push({ x, y: avgY });
+      }
+
+      // 3. Select points
+      const resultPoints: { px: number; py: number }[] = [];
+
+      if (uniquePoints.length <= desiredCount) {
+        // Not enough points to downsample extensively, just take what we have
+        uniquePoints.forEach(p => resultPoints.push({ px: p.x, py: p.y }));
+      } else {
+        // Always include start and end
+        resultPoints.push({ px: uniquePoints[0].x, py: uniquePoints[0].y });
+
+        const minX = uniquePoints[0].x;
+        const maxX = uniquePoints[uniquePoints.length - 1].x;
+        const totalRange = maxX - minX;
+
+        // We need desiredCount - 2 intermediate points
+        const step = totalRange / (desiredCount - 1);
+
+        for (let i = 1; i < desiredCount - 1; i++) {
+          const targetX = minX + (step * i);
+          // Find closest point in uniquePoints to targetX
+          // Since uniquePoints is sorted by x, we can optimize, but simple linear scan or find is fine for reasonable counts
+          const closest = uniquePoints.reduce((prev, curr) => {
+            return (Math.abs(curr.x - targetX) < Math.abs(prev.x - targetX) ? curr : prev);
+          });
+          resultPoints.push({ px: closest.x, py: closest.y });
+        }
+
+        resultPoints.push({ px: uniquePoints[uniquePoints.length - 1].x, py: uniquePoints[uniquePoints.length - 1].y });
+      }
+
+      useStore.getState().addPoints(resultPoints);
 
     } else if (mode === 'CALIBRATE_X') {
-      setPendingCalibrationPoint({ axis: 'X', step: calibStep, px: ptr.x, py: ptr.y });
+      const target = snapPoint || ptr;
+      setPendingCalibrationPoint({ axis: 'X', step: calibStep, px: target.x, py: target.y });
       setCalibStep((prev) => (prev === 1 ? 2 : 1));
+      setSnapPoint(null);
     } else if (mode === 'CALIBRATE_Y') {
-      setPendingCalibrationPoint({ axis: 'Y', step: calibStep, px: ptr.x, py: ptr.y });
+      const target = snapPoint || ptr;
+      setPendingCalibrationPoint({ axis: 'Y', step: calibStep, px: target.x, py: target.y });
       setCalibStep((prev) => (prev === 1 ? 2 : 1));
+      setSnapPoint(null);
     }
   };
 
@@ -100,28 +327,56 @@ export const DigitizerCanvas: React.FC = () => {
     [series]
   );
 
+  const [stageSize, setStageSize] = useState({ width: 0, height: 0 });
+
+  useEffect(() => {
+    if (!containerRef.current) return;
+
+    const resizeObserver = new ResizeObserver((entries) => {
+      for (const entry of entries) {
+        setStageSize({
+          width: entry.contentRect.width,
+          height: entry.contentRect.height,
+        });
+      }
+    });
+
+    resizeObserver.observe(containerRef.current);
+    return () => resizeObserver.disconnect();
+  }, []);
+
+  // Update scale on wheel...
+  // (Your existing resize/wheel logic can remain mostly, except for initial width/height)
+
   return (
-    <div ref={containerRef} className="flex-1 h-full bg-slate-100 overflow-hidden relative">
+    <div ref={containerRef} className="flex-1 h-full w-full overflow-hidden relative bg-transparent">
       {!imageUrl && (
-        <div className="absolute inset-0 flex items-center justify-center text-slate-400 text-sm">
+        <div className="absolute inset-0 flex items-center justify-center text-slate-400 text-sm pointer-events-none">
           Load an image to get started
         </div>
       )}
 
       {/* Instruction Banner */}
       {imageUrl && mode !== 'IDLE' && mode !== 'DIGITIZE' && (
-        <div className="absolute top-4 left-1/2 -translate-x-1/2 z-10 bg-white/90 backdrop-blur border border-slate-200 px-4 py-2 rounded-full shadow-sm text-sm font-medium text-slate-700 pointer-events-none">
-          Click point {calibStep} for {mode === 'CALIBRATE_X' ? 'X' : 'Y'} Axis
+        <div className="absolute top-4 left-1/2 -translate-x-1/2 z-10 bg-white/90 dark:bg-slate-900/90 backdrop-blur border border-slate-200 dark:border-slate-700 px-4 py-2 rounded-full shadow-sm text-sm font-medium text-slate-700 dark:text-slate-300 pointer-events-none">
+          Click point {calibStep} for {mode === 'CALIBRATE_X' ? 'X' : (activeYAxisDef ? activeYAxisDef.name : 'Y Axis')}
         </div>
       )}
+
+      {/* Magnifier Overlay */}
+      <div className="absolute top-4 right-4 w-[150px] h-[150px] bg-white dark:bg-slate-800 border-2 border-slate-300 dark:border-slate-600 shadow-lg z-20 pointer-events-none rounded overflow-hidden">
+        <canvas ref={magnifierRef} width={150} height={150} />
+      </div>
 
       <CalibrationInput />
 
       <Stage
-        width={size.width}
-        height={size.height}
+        width={stageSize.width}
+        height={stageSize.height}
         draggable
         onClick={handleStageClick}
+        onMouseMove={handleStageMouseMove}
+        style={{ cursor: mode === 'IDLE' ? 'default' : 'crosshair' }}
         ref={stageRef}
         onWheel={(e) => {
           e.evt.preventDefault();
@@ -152,19 +407,27 @@ export const DigitizerCanvas: React.FC = () => {
         {/* Calibration Layer */}
         <Layer>
           {/* Fitted Curves */}
-          {fittedCurves.map((curve) => {
-            if (!activeSeries || curve.seriesId !== activeSeries.id) return null;
+          {/* Fitted Curves */}
+          {series.map((ser) => {
+            if (!ser.fitConfig.enabled || !ser.fitResult) return null;
+
+            // Find appropriate Y Axis for this curve
+            const curveYAxis = yAxes.find(y => y.id === ser.yAxisId)?.calibration;
+
+            // If main axes are not calibrated, can't draw fit
+            if (!curveYAxis || curveYAxis.slope === null || curveYAxis.intercept === null || xAxis.slope === null || xAxis.intercept === null) return null;
+
             const points: number[] = [];
-            curve.points.forEach(p => {
-              if (p.dataX !== undefined && p.dataY !== undefined && xAxis.slope && xAxis.intercept && yAxis?.slope && yAxis?.intercept) {
+            ser.fitResult.points.forEach(p => {
+              if (p.dataX !== undefined && p.dataY !== undefined) {
                 // Inverse calibration
                 let xVal = p.dataX;
-                if (xAxis.isLog) xVal = Math.log10(xVal);
-                const px = (xVal - xAxis.intercept) / xAxis.slope;
+                if (xAxis.isLog && xVal > 0) xVal = Math.log10(xVal);
+                const px = (xVal - xAxis.intercept!) / xAxis.slope!;
 
                 let yVal = p.dataY;
-                if (yAxis.isLog) yVal = Math.log10(yVal);
-                const py = (yVal - yAxis.intercept) / yAxis.slope;
+                if (curveYAxis.isLog && yVal > 0) yVal = Math.log10(yVal);
+                const py = (yVal - curveYAxis.intercept!) / curveYAxis.slope!;
 
                 points.push(px, py);
               }
@@ -172,79 +435,144 @@ export const DigitizerCanvas: React.FC = () => {
 
             return (
               <KonvaLine
-                key={curve.id}
+                key={`fit-${ser.id}`}
                 points={points}
-                stroke="#9333ea" // purple-600
+                stroke={ser.color}
                 strokeWidth={2 / currentScale}
                 tension={0.5}
                 listening={false}
+                dash={[10, 5]} // Dashed line to distinguish from raw data or connecting lines
               />
             );
           })}
 
           {/* X Axis */}
           {xAxis.p1 && xAxis.p2 && (
-            <KonvaLine
-              points={[xAxis.p1.px, xAxis.p1.py, xAxis.p2.px, xAxis.p2.py]}
-              stroke="#3b82f6"
-              strokeWidth={1 / currentScale}
-              dash={[4, 4]}
-            />
+            <>
+              <KonvaLine
+                points={[xAxis.p1.px, xAxis.p1.py, xAxis.p2.px, xAxis.p2.py]}
+                stroke="#3b82f6"
+                strokeWidth={1 / currentScale}
+                dash={[4, 4]}
+              />
+              <Text
+                text={xAxisName}
+                x={(xAxis.p1.px + xAxis.p2.px) / 2}
+                y={(xAxis.p1.py + xAxis.p2.py) / 2}
+                rotation={Math.atan2(xAxis.p2.py - xAxis.p1.py, xAxis.p2.px - xAxis.p1.px) * 180 / Math.PI}
+                fill="#3b82f6"
+                fontSize={16 / currentScale}
+                fontStyle="bold"
+                offsetY={15 / currentScale}
+                offsetX={(xAxisName.length * 8) / (2 * currentScale)} // Approx centering
+              />
+            </>
           )}
           {xAxis.p1 && (
-            <Group x={xAxis.p1.px} y={xAxis.p1.py}>
-              <Circle radius={5 / currentScale} fill="#3b82f6" stroke="white" strokeWidth={1 / currentScale} />
-              <Text
-                text={`x=${xAxis.p1.val}`}
-                fill="#3b82f6"
-                fontSize={12 / currentScale}
-                y={8 / currentScale}
-                offsetX={10} // Rough centering
-              />
-            </Group>
-          )}
-          {xAxis.p2 && (
-            <Group x={xAxis.p2.px} y={xAxis.p2.py}>
-              <Circle radius={5 / currentScale} fill="#3b82f6" stroke="white" strokeWidth={1 / currentScale} />
-              <Text
-                text={`x=${xAxis.p2.val}`}
-                fill="#3b82f6"
-                fontSize={12 / currentScale}
-                y={8 / currentScale}
-              />
-            </Group>
-          )}
-
-          {/* Y Axis */}
-          {yAxis && yAxis.p1 && yAxis.p2 && (
-            <KonvaLine
-              points={[yAxis.p1.px, yAxis.p1.py, yAxis.p2.px, yAxis.p2.py]}
-              stroke="#ef4444"
-              strokeWidth={1 / currentScale}
-              dash={[4, 4]}
+            <CalibrationHandle
+              x={xAxis.p1.px}
+              y={xAxis.p1.py}
+              label={`x=${xAxis.p1.val}`}
+              color="#3b82f6"
+              axisType="X"
+              axisId={null}
+              pointIndex={1}
+              scale={currentScale}
+              xAxis={xAxis}
+              yAxes={yAxes}
             />
           )}
-          {yAxis?.p1 && (
-            <Group x={yAxis.p1.px} y={yAxis.p1.py}>
-              <Circle radius={5 / currentScale} fill="#ef4444" stroke="white" strokeWidth={1 / currentScale} />
-              <Text
-                text={`y=${yAxis.p1.val}`}
-                fill="#ef4444"
-                fontSize={12 / currentScale}
-                y={8 / currentScale}
-              />
-            </Group>
+          {xAxis.p2 && (
+            <CalibrationHandle
+              x={xAxis.p2.px}
+              y={xAxis.p2.py}
+              label={`x=${xAxis.p2.val}`}
+              color="#3b82f6"
+              axisType="X"
+              axisId={null}
+              pointIndex={2}
+              scale={currentScale}
+              xAxis={xAxis}
+              yAxes={yAxes}
+            />
           )}
-          {yAxis?.p2 && (
-            <Group x={yAxis.p2.px} y={yAxis.p2.py}>
-              <Circle radius={5 / currentScale} fill="#ef4444" stroke="white" strokeWidth={1 / currentScale} />
-              <Text
-                text={`y=${yAxis.p2.val}`}
-                fill="#ef4444"
-                fontSize={12 / currentScale}
-                y={8 / currentScale}
-              />
-            </Group>
+
+          {/* Y Axes */}
+          {yAxes.map((axis) => {
+            const { p1, p2 } = axis.calibration;
+            const isActive = axis.id === activeYAxisId;
+            const color = isActive ? '#ef4444' : '#f87171';
+            const opacity = isActive ? 1 : 0.6;
+
+            return (
+              <Group key={axis.id} opacity={opacity}>
+                {p1 && p2 && (
+                  <>
+                    <KonvaLine
+                      points={[p1.px, p1.py, p2.px, p2.py]}
+                      stroke={color}
+                      strokeWidth={1 / currentScale}
+                      dash={[4, 4]}
+                      listening={false}
+                    />
+                    <Text
+                      text={axis.name}
+                      x={(p1.px + p2.px) / 2}
+                      y={(p1.py + p2.py) / 2}
+                      rotation={Math.atan2(p2.py - p1.py, p2.px - p1.px) * 180 / Math.PI}
+                      fill={color}
+                      fontSize={16 / currentScale}
+                      fontStyle="bold"
+                      offsetY={15 / currentScale}
+                      offsetX={(axis.name.length * 8) / (2 * currentScale)}
+                    />
+                  </>
+                )}
+                {p1 && (
+                  <CalibrationHandle
+                    x={p1.px}
+                    y={p1.py}
+                    label={`y=${p1.val}`}
+                    color={color}
+                    axisType="Y"
+                    axisId={axis.id}
+                    pointIndex={1}
+                    scale={currentScale}
+                    xAxis={xAxis}
+                    yAxes={yAxes}
+                  />
+                )}
+                {p2 && (
+                  <CalibrationHandle
+                    x={p2.px}
+                    y={p2.py}
+                    label={`y=${p2.val}`}
+                    color={color}
+                    axisType="Y"
+                    axisId={axis.id}
+                    pointIndex={2}
+                    scale={currentScale}
+                    xAxis={xAxis}
+                    yAxes={yAxes}
+                  />
+                )}
+              </Group>
+            );
+          })}
+        </Layer>
+
+        {/* Snap Indicator Layer */}
+        <Layer>
+          {snapPoint && (
+            <Circle
+              x={snapPoint.x}
+              y={snapPoint.y}
+              radius={8 / currentScale}
+              stroke="cyan"
+              strokeWidth={2 / currentScale}
+              fill="transparent"
+              listening={false}
+            />
           )}
         </Layer>
 
@@ -261,7 +589,46 @@ export const DigitizerCanvas: React.FC = () => {
             />
           ))}
         </Layer>
+
+        {/* Series Labels Layer */}
+        <Layer>
+          {series.map((ser) => {
+            if (!ser.showLabels || ser.points.length === 0) return null;
+            // Use the center point for the label
+            const centerIndex = Math.floor(ser.points.length / 2);
+            const p = ser.points[centerIndex];
+
+            return (
+              <Label
+                key={`label-${ser.id}`}
+                x={p.x}
+                y={p.y}
+                listening={false}
+              >
+                <Tag
+                  fill={ser.color}
+                  pointerDirection="down"
+                  pointerWidth={10}
+                  pointerHeight={10}
+                  lineJoin="round"
+                  shadowColor="black"
+                  shadowBlur={5}
+                  shadowOffsetX={2}
+                  shadowOffsetY={2}
+                  shadowOpacity={0.2}
+                />
+                <Text
+                  text={ser.name}
+                  fontFamily="sans-serif"
+                  fontSize={14 / currentScale}
+                  padding={4}
+                  fill="white"
+                />
+              </Label>
+            );
+          })}
+        </Layer>
       </Stage>
     </div>
   );
-};
+});
