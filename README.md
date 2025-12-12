@@ -29,7 +29,7 @@ The GitHub Pages workflow in this repo sets the value automatically when buildin
 1. **Load an image** of your chart using the file picker.
 2. **Calibrate the X axis** by selecting two points on the image and entering their real-world values.
 3. **Calibrate the Y axis** (per series) the same way. Toggle linear/log scaling as needed.
-4. Click **Start Digitizing** to add points; each click records pixel and calibrated data coordinates for the active series.
+4. Use the **Digitize** toggle to start/stop capturing points; each click while it’s on records pixel and calibrated data coordinates for the active series.
 5. Add more series from the sidebar; each series maintains its own Y-axis calibration and color.
 
 Mouse wheel zoom and drag-to-pan make it easy to focus on your plot while digitizing.
