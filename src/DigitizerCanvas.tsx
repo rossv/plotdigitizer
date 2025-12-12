@@ -143,43 +143,84 @@ export const DigitizerCanvas = forwardRef<DigitizerHandle>((_, ref) => {
     toDataURL: (options) => {
       if (stageRef.current) {
         const stage = stageRef.current;
+        const oldScale = stage.scale();
+        const oldPos = stage.position();
         let originalImageVisible = true;
-        let bgLayer: any = null;
         let sourceImageNode: any = null;
+        let bgLayer: any = null;
+        const hiddenNodes: any[] = [];
 
-        if (options?.graphicsOnly) {
-          // Find source image and hide it
-          sourceImageNode = stage.findOne('.source-image');
-          if (sourceImageNode) {
-            originalImageVisible = sourceImageNode.visible();
-            sourceImageNode.hide();
+        try {
+          if (options?.graphicsOnly) {
+            // 1. Hide Source Image
+            sourceImageNode = stage.findOne('.source-image');
+            if (sourceImageNode) {
+              originalImageVisible = sourceImageNode.visible();
+              sourceImageNode.hide();
+            }
+
+            // 2. Hide UI Artifacts
+            ['.guide-line', '.snap-indicator', '.selection-box'].forEach(selector => {
+              const nodes = stage.find(selector);
+              nodes.forEach((node: any) => {
+                if (node.visible()) {
+                  node.hide();
+                  hiddenNodes.push(node);
+                }
+              });
+            });
+
+            // 3. Reset Transform temporarily for accurate bounding box calculation
+            stage.scale({ x: 1, y: 1 });
+            stage.position({ x: 0, y: 0 });
+
+            // 4. Get Bounding Box of visible content
+            const bbox = stage.getClientRect({ relativeTo: stage });
+
+            // 5. Add White Background matching the bbox (with padding)
+            const padding = 20;
+            // Handle case where bbox might be invalid (e.g. no graphics)
+            const bgX = bbox.width > 0 ? bbox.x - padding : 0;
+            const bgY = bbox.height > 0 ? bbox.y - padding : 0;
+            const bgW = bbox.width > 0 ? bbox.width + (padding * 2) : stage.width();
+            const bgH = bbox.height > 0 ? bbox.height + (padding * 2) : stage.height();
+
+            bgLayer = new (window as any).Konva.Layer();
+            const bgRect = new (window as any).Konva.Rect({
+              x: bgX,
+              y: bgY,
+              width: bgW,
+              height: bgH,
+              fill: 'white',
+            });
+            bgLayer.add(bgRect);
+            stage.add(bgLayer);
+            bgLayer.moveToBottom();
+
+            // 6. Export cropped area
+            return stage.toDataURL({
+              pixelRatio: 2,
+              x: bgX,
+              y: bgY,
+              width: bgW,
+              height: bgH,
+            });
+          } else {
+            // Standard export
+            return stage.toDataURL({ pixelRatio: 2 });
           }
-
-          // Create white background
-          bgLayer = new (window as any).Konva.Layer();
-          const bgRect = new (window as any).Konva.Rect({
-            x: 0,
-            y: 0,
-            width: stage.width() / stage.scaleX(), // Adjust for scale
-            height: stage.height() / stage.scaleY(),
-            fill: 'white',
-          });
-          bgLayer.add(bgRect);
-          stage.add(bgLayer);
-          bgLayer.moveToBottom();
-        }
-
-        const dataUrl = stage.toDataURL({ pixelRatio: 2 });
-
-        // Cleanup
-        if (options?.graphicsOnly) {
+        } finally {
+          // Cleanup and Restore
           if (bgLayer) bgLayer.destroy();
           if (sourceImageNode && originalImageVisible) {
             sourceImageNode.show();
           }
-        }
+          hiddenNodes.forEach(node => node.show());
 
-        return dataUrl;
+          // Restore State
+          if (oldScale) stage.scale(oldScale);
+          if (oldPos) stage.position(oldPos);
+        }
       }
       return null;
     }
@@ -697,6 +738,7 @@ export const DigitizerCanvas = forwardRef<DigitizerHandle>((_, ref) => {
         <Layer>
           {snapPoint && (
             <Circle
+              name="snap-indicator"
               x={snapPoint.x}
               y={snapPoint.y}
               radius={8 / currentScale}
@@ -712,6 +754,7 @@ export const DigitizerCanvas = forwardRef<DigitizerHandle>((_, ref) => {
         <Layer>
           {selectionBox && (
             <Rect
+              name="selection-box"
               x={selectionBox.x}
               y={selectionBox.y}
               width={selectionBox.width}
@@ -728,6 +771,7 @@ export const DigitizerCanvas = forwardRef<DigitizerHandle>((_, ref) => {
           {mode === 'DIGITIZE' && pointerPos && (
             <>
               <KonvaLine
+                name="guide-line"
                 points={[0, pointerPos.y, stageSize.width / currentScale, pointerPos.y]}
                 stroke="red"
                 strokeWidth={1 / currentScale}
@@ -736,6 +780,7 @@ export const DigitizerCanvas = forwardRef<DigitizerHandle>((_, ref) => {
                 listening={false}
               />
               <KonvaLine
+                name="guide-line"
                 points={[pointerPos.x, 0, pointerPos.x, stageSize.height / currentScale]}
                 stroke="red"
                 strokeWidth={1 / currentScale}
