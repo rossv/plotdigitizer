@@ -430,7 +430,7 @@ export const DigitizerCanvas = forwardRef<DigitizerHandle>((_, ref) => {
     }
   };
 
-  const handleStageMouseUp = (e: KonvaEventObject<MouseEvent>) => {
+  const handleStageMouseUp = () => {
     if (mode === 'SELECT' && isSelectingRef.current) {
       if (selectionBox) {
         // Find points in box
