@@ -2,7 +2,9 @@ import React, { useEffect, useRef, useState } from 'react';
 import { useStore } from '../store';
 
 export const CalibrationInput: React.FC = () => {
-    const { pendingCalibrationPoint, setPendingCalibrationPoint, confirmCalibrationPoint } = useStore();
+    const { setPendingCalibrationPoint, confirmCalibrationPoint, activeWorkspaceId, workspaces } = useStore();
+    const activeWorkspace = workspaces.find(w => w.id === activeWorkspaceId);
+    const pendingCalibrationPoint = activeWorkspace?.pendingCalibrationPoint;
     const [value, setValue] = useState('');
     const inputRef = useRef<HTMLInputElement>(null);
 

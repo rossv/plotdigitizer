@@ -1,39 +1,45 @@
 import type { Series } from '../types';
 
-export const generateCSV = (series: Series[]): string => {
-    // Find all unique X values across all series to align rows if needed?
-    // Or just simple column lists.
-    // The Python code does:
-    // Headers: X_1, Y_1, X_2, Y_2, ...
-    // Rows: max(rows)
-
+export const generateTableData = (series: Series[], delimiter: string = ','): string => {
     const columns: string[][] = [];
     const headers: string[] = [];
     let maxRows = 0;
 
     series.forEach((s) => {
         headers.push(`X_${s.name}`, `Y_${s.name}`);
+        if (s.fitConfig.enabled) {
+            headers.push(`Fit_${s.name}`);
+        }
+
         const sX: string[] = [];
         const sY: string[] = [];
+        const sFit: string[] = [];
+
         s.points.forEach(p => {
-            if (p.dataX !== undefined && p.dataY !== undefined) {
-                sX.push(p.dataX.toString());
-                sY.push(p.dataY.toString());
+            sX.push(p.dataX !== undefined ? p.dataX.toString() : '');
+            sY.push(p.dataY !== undefined ? p.dataY.toString() : '');
+            if (s.fitConfig.enabled) {
+                sFit.push(p.fittedY !== undefined ? p.fittedY.toString() : '');
             }
         });
+
         columns.push(sX, sY);
+        if (s.fitConfig.enabled) {
+            columns.push(sFit);
+        }
+
         maxRows = Math.max(maxRows, sX.length);
     });
 
     const lines: string[] = [];
-    lines.push(headers.join(','));
+    lines.push(headers.join(delimiter));
 
     for (let i = 0; i < maxRows; i++) {
         const row: string[] = [];
         columns.forEach(col => {
             row.push(col[i] || '');
         });
-        lines.push(row.join(','));
+        lines.push(row.join(delimiter));
     }
 
     return lines.join('\n');

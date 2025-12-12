@@ -101,11 +101,17 @@ const CalibrationHandle: React.FC<CalibrationHandleProps> = ({ x, y, label, colo
 };
 
 export interface DigitizerHandle {
-  toDataURL: () => string | null;
+  toDataURL: (options?: { graphicsOnly?: boolean }) => string | null;
 }
 
 export const DigitizerCanvas = forwardRef<DigitizerHandle>((_, ref) => {
-  const { imageUrl, mode, addPoint, setPendingCalibrationPoint, xAxis, xAxisName, series, yAxes, activeYAxisId, updateSeriesLabelPosition } = useStore();
+  const { addPoint, setPendingCalibrationPoint, updateSeriesLabelPosition, activeWorkspaceId, workspaces } = useStore();
+
+  const activeWorkspace = workspaces.find(w => w.id === activeWorkspaceId);
+  // We can return null or a skeleton if no workspace, but app should ensure one exists
+  if (!activeWorkspace) return null;
+
+  const { imageUrl, mode, xAxis, xAxisName, series, yAxes, activeYAxisId } = activeWorkspace;
   const [image] = useImage(imageUrl || '', 'anonymous');
   const stageRef = useRef<KonvaStage | null>(null);
   const containerRef = useRef<HTMLDivElement | null>(null);
@@ -116,9 +122,46 @@ export const DigitizerCanvas = forwardRef<DigitizerHandle>((_, ref) => {
   const [snapPoint, setSnapPoint] = useState<{ x: number; y: number } | null>(null);
 
   useImperativeHandle(ref, () => ({
-    toDataURL: () => {
+    toDataURL: (options) => {
       if (stageRef.current) {
-        return stageRef.current.toDataURL({ pixelRatio: 2 });
+        const stage = stageRef.current;
+        let originalImageVisible = true;
+        let bgLayer: any = null;
+        let sourceImageNode: any = null;
+
+        if (options?.graphicsOnly) {
+          // Find source image and hide it
+          sourceImageNode = stage.findOne('.source-image');
+          if (sourceImageNode) {
+            originalImageVisible = sourceImageNode.visible();
+            sourceImageNode.hide();
+          }
+
+          // Create white background
+          bgLayer = new (window as any).Konva.Layer();
+          const bgRect = new (window as any).Konva.Rect({
+            x: 0,
+            y: 0,
+            width: stage.width() / stage.scaleX(), // Adjust for scale
+            height: stage.height() / stage.scaleY(),
+            fill: 'white',
+          });
+          bgLayer.add(bgRect);
+          stage.add(bgLayer);
+          bgLayer.moveToBottom();
+        }
+
+        const dataUrl = stage.toDataURL({ pixelRatio: 2 });
+
+        // Cleanup
+        if (options?.graphicsOnly) {
+          if (bgLayer) bgLayer.destroy();
+          if (sourceImageNode && originalImageVisible) {
+            sourceImageNode.show();
+          }
+        }
+
+        return dataUrl;
       }
       return null;
     }
@@ -402,7 +445,7 @@ export const DigitizerCanvas = forwardRef<DigitizerHandle>((_, ref) => {
           stage.batchDraw();
         }}
       >
-        <Layer>{image && <KonvaImage image={image} />}</Layer>
+        <Layer>{image && <KonvaImage name="source-image" image={image} />}</Layer>
 
         {/* Calibration Layer */}
         <Layer>

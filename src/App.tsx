@@ -1,44 +1,68 @@
 
 import React, { useEffect, useRef } from 'react';
-import { Plus, ScanLine, Image as ImageIcon, Sun, Moon, Trash2, Download, Database, Undo, Redo, Camera } from 'lucide-react';
+import { Plus, ScanLine, Image as ImageIcon, Sun, Moon, Trash2, Download, Database, Undo, Redo, Camera, Copy, ImageOff, Save, FolderOpen, X } from 'lucide-react';
 import { DigitizerCanvas } from './DigitizerCanvas';
 import type { DigitizerHandle } from './DigitizerCanvas';
 import { useStore } from './store';
 import testPlotUrl from './assets/test_plot.svg';
-import { generateCSV, downloadCSV } from './utils/export';
+import { generateTableData, downloadCSV } from './utils/export';
+import { loadPdfDocument } from './utils/pdf-utils';
+import { PdfPageSelector } from './components/PdfPageSelector';
+import * as pdfjsLib from 'pdfjs-dist';
 
 export default function App() {
   const digitizerRef = useRef<DigitizerHandle>(null);
+  const [pdfDocument, setPdfDocument] = React.useState<pdfjsLib.PDFDocumentProxy | null>(null);
 
   const {
+    activeWorkspaceId,
+    workspaces,
+    setActiveWorkspace,
+    addWorkspace,
+    removeWorkspace,
+    updateWorkspaceName, // This was missing in the destructure
+    theme,
+    toggleTheme,
+    loadProject,
+
+    // Actions
     setImageUrl,
-    mode,
     setMode,
-    series,
-    activeSeriesId,
-    setActiveSeries,
     addSeries,
-    xAxis,
-    xAxisName,
     setXAxisName,
     toggleXAxisLog,
     toggleYAxisLog,
     updateYAxisName,
-    yAxes,
-    activeYAxisId,
     addYAxis,
     deleteYAxis,
     setActiveYAxis,
+    setActiveSeries,
     setSeriesYAxis,
     setSeriesFitConfig,
-    theme,
-    toggleTheme,
     undo,
     redo,
     updateSeriesName,
     clearSeriesPoints,
     toggleSeriesLabels,
   } = useStore();
+
+  const activeWorkspace = workspaces.find(w => w.id === activeWorkspaceId);
+  // Fail-safe
+  if (!activeWorkspace) {
+    if (workspaces.length > 0) setActiveWorkspace(workspaces[0].id);
+    return null;
+  }
+
+  const {
+    imageUrl,
+    mode,
+    series,
+    activeSeriesId,
+    xAxis,
+    xAxisName,
+    yAxes,
+    activeYAxisId
+  } = activeWorkspace;
 
   const activeSeries = series.find((s) => s.id === activeSeriesId);
   const activeSeriesYAxis = yAxes.find((y) => y.id === activeSeries?.yAxisId)?.calibration;
@@ -51,10 +75,22 @@ export default function App() {
     activeSeriesYAxis?.slope !== null &&
     activeSeriesYAxis?.intercept !== null;
 
-  const handleFile = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files?.[0]) {
-      const url = URL.createObjectURL(e.target.files[0]);
-      setImageUrl(url);
+      const file = e.target.files[0];
+      const url = URL.createObjectURL(file);
+
+      if (file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf')) {
+        try {
+          const pdf = await loadPdfDocument(url);
+          setPdfDocument(pdf);
+        } catch (error) {
+          console.error("Failed to load PDF", error);
+          alert("Failed to load PDF file is it valid?");
+        }
+      } else {
+        setImageUrl(url);
+      }
     }
   };
 
@@ -69,18 +105,84 @@ export default function App() {
     }
   };
 
-  const handleExportImage = () => {
+  const handleExportImage = (graphicsOnly = false) => {
     if (digitizerRef.current) {
-      const dataUrl = digitizerRef.current.toDataURL();
+      const dataUrl = digitizerRef.current.toDataURL({ graphicsOnly });
       if (dataUrl) {
         const link = document.createElement('a');
-        link.download = 'digitized_plot.png';
+        link.download = graphicsOnly ? 'digitized_graphics.png' : 'digitized_plot.png';
         link.href = dataUrl;
         document.body.appendChild(link);
         link.click();
         document.body.removeChild(link);
       }
     }
+  };
+
+  const handleSaveProject = async () => {
+    const state = useStore.getState();
+    const { workspaces, activeWorkspaceId, theme } = state;
+
+    // Process all workspaces to convert blob URLs to base64 if needed
+    const processedWorkspaces = await Promise.all(workspaces.map(async (ws) => {
+      let base64Image = ws.imageUrl;
+      if (ws.imageUrl && ws.imageUrl.startsWith('blob:')) {
+        try {
+          const resp = await fetch(ws.imageUrl);
+          const blob = await resp.blob();
+          base64Image = await new Promise((resolve) => {
+            const reader = new FileReader();
+            reader.onloadend = () => resolve(reader.result as string);
+            reader.readAsDataURL(blob);
+          });
+        } catch (e) {
+          console.error(`Failed to convert image for workspace ${ws.name}`, e);
+        }
+      }
+      return { ...ws, imageUrl: base64Image };
+    }));
+
+    const projectData = {
+      version: 2, // Increment version
+      createdAt: new Date().toISOString(),
+      workspaces: processedWorkspaces,
+      activeWorkspaceId,
+      theme
+    };
+
+    const blob = new Blob([JSON.stringify(projectData, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.download = `plot_digitizer_project_${new Date().toISOString().slice(0, 10)}.json`;
+    link.href = url;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
+  const handleLoadProject = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      try {
+        const json = JSON.parse(event.target?.result as string);
+        const isLegacy = json.xAxis && json.yAxes && json.series;
+        const isNew = Array.isArray(json.workspaces);
+
+        if (!isLegacy && !isNew) {
+          alert("Invalid project file: missing core data");
+          return;
+        }
+        loadProject(json);
+      } catch (err) {
+        console.error("Failed to parse project file", err);
+        alert("Failed to load project file");
+      }
+    };
+    reader.readAsText(file);
+    e.target.value = '';
   };
 
   useEffect(() => {
@@ -102,6 +204,28 @@ export default function App() {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [undo, redo]);
 
+  // Handle paste events
+  useEffect(() => {
+    const handlePaste = (e: ClipboardEvent) => {
+      if (e.clipboardData?.items) {
+        const items = e.clipboardData.items;
+        for (let i = 0; i < items.length; i++) {
+          if (items[i].type.indexOf('image') !== -1) {
+            const file = items[i].getAsFile();
+            if (file) {
+              const url = URL.createObjectURL(file);
+              setImageUrl(url);
+              break;
+            }
+          }
+        }
+      }
+    };
+
+    window.addEventListener('paste', handlePaste);
+    return () => window.removeEventListener('paste', handlePaste);
+  }, [setImageUrl]);
+
   // Apply theme class to html element on mount
   useEffect(() => {
     console.log('Theme effect running. Theme:', theme);
@@ -120,14 +244,17 @@ export default function App() {
 
         {/* Header Bin */}
         <div className="p-4 bg-white dark:bg-slate-900 rounded-2xl shadow-sm border border-slate-200 dark:border-slate-800 flex items-center justify-between transition-colors">
-          <div>
-            <div className="flex items-center gap-2">
-              <h1 className="text-xl font-bold text-slate-900 dark:text-white tracking-tight">Plot Digitizer</h1>
-              <span className="px-1.5 py-0.5 rounded-md bg-blue-100 dark:bg-blue-500/20 text-blue-600 dark:text-blue-300 text-[10px] font-bold tracking-wide uppercase border border-blue-200 dark:border-blue-500/30 shadow-sm">
-                Beta
-              </span>
+          <div className="flex items-center gap-3">
+            <img src="/logo.png" alt="Logo" className="w-10 h-10 object-contain" />
+            <div>
+              <div className="flex items-center gap-2">
+                <h1 className="text-xl font-bold text-slate-900 dark:text-white tracking-tight">Plot Digitizer</h1>
+                <span className="px-1.5 py-0.5 rounded-md bg-blue-100 dark:bg-blue-500/20 text-blue-600 dark:text-blue-300 text-[10px] font-bold tracking-wide uppercase border border-blue-200 dark:border-blue-500/30 shadow-sm">
+                  Beta
+                </span>
+              </div>
+              <p className="text-xs text-slate-500 dark:text-slate-400">Extract data from images</p>
             </div>
-            <p className="text-xs text-slate-500 dark:text-slate-400">Extract data from images</p>
           </div>
           <button
             onClick={toggleTheme}
@@ -143,6 +270,8 @@ export default function App() {
           </button>
         </div>
 
+
+
         {/* Controls Container - Scrollable */}
         <div className="flex-1 flex flex-col gap-4 overflow-y-auto pr-1">
 
@@ -150,17 +279,37 @@ export default function App() {
           <div className="p-4 bg-white dark:bg-slate-900 rounded-2xl shadow-sm border border-slate-200 dark:border-slate-800 space-y-3 transition-colors">
 
 
+            <div className="grid grid-cols-2 gap-2">
+              <button
+                onClick={handleSaveProject}
+                className="flex items-center justify-center gap-2 px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400 hover:text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-900/20 transition text-xs font-medium"
+              >
+                <Save className="h-4 w-4" />
+                Save Project
+              </button>
+              <label className="flex items-center justify-center gap-2 px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400 hover:text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-900/20 transition text-xs font-medium cursor-pointer">
+                <input
+                  type="file"
+                  accept=".json"
+                  onChange={handleLoadProject}
+                  className="hidden"
+                />
+                <FolderOpen className="h-4 w-4" />
+                Load Project
+              </label>
+            </div>
+
             <div className="flex gap-2">
               <label className="flex-1 cursor-pointer">
                 <input
                   type="file"
-                  accept="image/*"
+                  accept=".pdf,image/*"
                   onChange={handleFile}
                   className="hidden"
                 />
                 <div className="flex items-center justify-center gap-2 w-full px-3 py-2 rounded-lg border border-dashed border-slate-300 dark:border-slate-600 text-slate-600 dark:text-slate-400 hover:border-blue-500 dark:hover:border-blue-400 hover:text-blue-600 dark:hover:text-blue-400 text-xs font-medium transition">
                   <ImageIcon className="h-4 w-4" />
-                  Load Image
+                  Load Image / PDF
                 </div>
               </label>
               <button
@@ -469,15 +618,33 @@ export default function App() {
               <div className="flex gap-1">
                 {/* Export Mini Buttons */}
                 <button
-                  onClick={handleExportImage}
-                  title="Export PNG"
+                  onClick={() => handleExportImage(false)}
+                  title="Export Snapshot"
                   className="p-1 rounded hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-500 dark:text-slate-400 transition"
                 >
                   <Camera className="h-3.5 w-3.5" />
                 </button>
                 <button
+                  onClick={() => handleExportImage(true)}
+                  title="Export Graphics Only"
+                  className="p-1 rounded hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-500 dark:text-slate-400 transition"
+                >
+                  <ImageOff className="h-3.5 w-3.5" />
+                </button>
+                <button
+                  onClick={async () => {
+                    const tsv = generateTableData(series, '\t');
+                    await navigator.clipboard.writeText(tsv);
+                    // Minimal feedback - could expand if needed
+                  }}
+                  title="Copy to Clipboard"
+                  className="p-1 rounded hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-500 dark:text-slate-400 transition"
+                >
+                  <Copy className="h-3.5 w-3.5" />
+                </button>
+                <button
                   onClick={() => {
-                    const csv = generateCSV(series);
+                    const csv = generateTableData(series, ',');
                     downloadCSV(csv, 'digitized_data.csv');
                   }}
                   title="Export CSV"
@@ -583,9 +750,45 @@ export default function App() {
               </button>
             </div>
             <div className="w-px h-4 bg-slate-200 dark:bg-slate-700 mx-1" />
-            <span className="text-xs text-slate-400 dark:text-slate-500 font-medium">
-              Workspace
-            </span>
+            {/* Workspace Tabs moved here */}
+            <div className="flex-1 flex items-center gap-1 overflow-x-auto scrollbar-hide pl-1">
+              {workspaces.map(ws => (
+                <div
+                  key={ws.id}
+                  className={`group relative flex items-center gap-2 px-3 py-1 rounded-md transition-all shrink-0 cursor-pointer border ${ws.id === activeWorkspaceId
+                    ? 'bg-white dark:bg-slate-900 border-slate-300 dark:border-slate-600 shadow-sm text-slate-800 dark:text-slate-100'
+                    : 'bg-transparent border-transparent text-slate-500 hover:bg-slate-200/50 dark:hover:bg-slate-800/50'
+                    }`}
+                  onClick={() => setActiveWorkspace(ws.id)}
+                >
+                  <input
+                    value={ws.name}
+                    onChange={(e) => updateWorkspaceName(ws.id, e.target.value)}
+                    className="bg-transparent text-xs font-medium focus:outline-none min-w-[60px] max-w-[120px]"
+                  />
+                  {workspaces.length > 1 && (
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        if (confirm("Close this workspace? Unsaved changes will be lost.")) {
+                          removeWorkspace(ws.id);
+                        }
+                      }}
+                      className="opacity-0 group-hover:opacity-100 p-0.5 rounded-full hover:bg-red-100 dark:hover:bg-red-900/30 text-slate-400 hover:text-red-500 transition"
+                    >
+                      <X className="h-3 w-3" />
+                    </button>
+                  )}
+                </div>
+              ))}
+              <button
+                onClick={addWorkspace}
+                className="p-1.5 rounded-md hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-400 hover:text-blue-500 transition shrink-0"
+                title="New Workspace"
+              >
+                <Plus className="h-3.5 w-3.5" />
+              </button>
+            </div>
           </div>
 
           <div className="flex-1 relative overflow-hidden">
@@ -593,6 +796,16 @@ export default function App() {
           </div>
         </div>
       </div>
+      {pdfDocument && (
+        <PdfPageSelector
+          pdfDocument={pdfDocument}
+          onSelectPage={(url) => {
+            setImageUrl(url);
+            setPdfDocument(null);
+          }}
+          onCancel={() => setPdfDocument(null)}
+        />
+      )}
     </div>
   );
 }
