@@ -25,6 +25,8 @@ interface Workspace {
   // Specific UI state that should be per-workspace
   pendingCalibrationPoint: { axis: 'X' | 'Y'; step: 1 | 2; px: number; py: number } | null;
 
+  singlePoints: Point[]; // Independent graphical points
+
   // Undo/Redo history
   history: { series: Series[]; yAxes: YAxisDefinition[] }[];
   historyIndex: number;
@@ -73,6 +75,7 @@ interface StoreState {
   confirmCalibrationPoint: (val: number) => void;
 
   addPoint: (px: number, py: number) => void;
+  addSinglePoint: (px: number, py: number) => void;
   addPoints: (points: { px: number; py: number }[]) => void;
   deletePoint: (pointId: string) => void;
 
@@ -195,6 +198,7 @@ const createInitialWorkspace = (name: string): Workspace => ({
     },
   ],
   activeSeriesId: 'series-1',
+  singlePoints: [],
   pendingCalibrationPoint: null,
   history: [],
   historyIndex: -1,
@@ -536,6 +540,31 @@ export const useStore = create<StoreState>((set) => ({
     };
   })),
 
+  addSinglePoint: (px, py) => set(state => updateActiveWorkspace(state, (ws) => {
+    // Determine which Y axis to use. Use active Y axis.
+    const activeAxisId = ws.activeYAxisId || (ws.yAxes[0] ? ws.yAxes[0].id : null);
+    if (!activeAxisId) return {};
+
+    const yAxis = ws.yAxes.find(y => y.id === activeAxisId)?.calibration;
+    if (!yAxis) return {};
+
+    const coords = pixelToData(px, py, ws.xAxis, yAxis);
+    if (!coords) return {};
+
+    const newPoint: Point = {
+      id: uuidv4(),
+      x: px,
+      y: py,
+      seriesId: 'single-point', // Special ID
+      dataX: coords.x,
+      dataY: coords.y,
+    };
+
+    return {
+      singlePoints: [...ws.singlePoints, newPoint]
+    };
+  })),
+
   addPoints: (points) => set(state => updateActiveWorkspace(state, (ws) => {
     const activeSeries = ws.series.find((s) => s.id === ws.activeSeriesId);
     if (!activeSeries) return {};
@@ -578,6 +607,13 @@ export const useStore = create<StoreState>((set) => ({
   })),
 
   deletePoint: (pointId) => set(state => updateActiveWorkspace(state, (ws) => {
+    // Check single points first
+    if (ws.singlePoints.some(p => p.id === pointId)) {
+      return {
+        singlePoints: ws.singlePoints.filter(p => p.id !== pointId)
+      };
+    }
+
     const updatedSeries = ws.series.map((s) => {
       const hasPoint = s.points.some(p => p.id === pointId);
       if (!hasPoint) return s;
@@ -730,11 +766,15 @@ export const useStore = create<StoreState>((set) => ({
       return updateSeriesFit({ ...s, points: newPoints });
     });
 
+    // Also filter singlePoints
+    const updatedSinglePoints = ws.singlePoints.filter(p => !ws.selectedPointIds.includes(p.id));
+
     const newHistory = ws.history ? ws.history.slice(0, ws.historyIndex + 1) : [];
     newHistory.push({ series: updatedSeries, yAxes: ws.yAxes });
 
     return {
       series: updatedSeries,
+      singlePoints: updatedSinglePoints,
       selectedPointIds: [],
       history: newHistory,
       historyIndex: newHistory.length - 1
@@ -742,6 +782,21 @@ export const useStore = create<StoreState>((set) => ({
   })),
 
   updatePointPosition: (pointId, px, py) => set(state => updateActiveWorkspace(state, (ws) => {
+    // Check single points
+    if (ws.singlePoints.some(p => p.id === pointId)) {
+      const activeAxisId = ws.activeYAxisId || (ws.yAxes[0] ? ws.yAxes[0].id : null);
+      if (!activeAxisId) return {};
+
+      const yAxis = ws.yAxes.find(y => y.id === activeAxisId)?.calibration;
+      if (!yAxis) return {};
+      const coords = pixelToData(px, py, ws.xAxis, yAxis);
+      if (!coords) return {};
+
+      return {
+        singlePoints: ws.singlePoints.map(p => p.id === pointId ? { ...p, x: px, y: py, dataX: coords.x, dataY: coords.y } : p)
+      };
+    }
+
     // Find series for this point
     let targetSeriesId = '';
     for (const s of ws.series) {
@@ -752,12 +807,15 @@ export const useStore = create<StoreState>((set) => ({
     }
     if (!targetSeriesId) return {};
 
-    const yAxis = ws.yAxes.find(y => y.id === ws.series.find(s => s.id === targetSeriesId)?.yAxisId)?.calibration;
+    const series = ws.series.find(s => s.id === targetSeriesId);
+    if (!series) return {};
+
+    const yAxis = ws.yAxes.find(y => y.id === series.yAxisId)?.calibration;
     const xAxis = ws.xAxis;
 
     if (!yAxis) return {};
 
-    const coords = pixelToData(px, py, xAxis, yAxis); // Calculate new data based on pixel
+    const coords = pixelToData(px, py, xAxis, yAxis);
     if (!coords) return {};
 
     const updatedSeries = ws.series.map(s => {
@@ -771,12 +829,10 @@ export const useStore = create<StoreState>((set) => ({
           dataX: coords.x,
           dataY: coords.y
         };
-      }).sort((a, b) => (a.dataX || 0) - (b.dataX || 0)); // Keep sorted
+      }).sort((a, b) => (a.dataX || 0) - (b.dataX || 0));
       return updateSeriesFit({ ...s, points: newPoints });
     });
 
-    // Don't push history on every drag frame? 
-    // Usually this function is called on DragEnd. So yes, push history.
     const newHistory = ws.history ? ws.history.slice(0, ws.historyIndex + 1) : [];
     newHistory.push({ series: updatedSeries, yAxes: ws.yAxes });
 
@@ -792,28 +848,37 @@ export const useStore = create<StoreState>((set) => ({
 
     const xAxis = ws.xAxis;
 
+    // Nudge series points
     const updatedSeries = ws.series.map(s => {
       const hasSelected = s.points.some(p => ws.selectedPointIds.includes(p.id));
       if (!hasSelected) return s;
 
       const yAxis = ws.yAxes.find(y => y.id === s.yAxisId)?.calibration;
-      if (!yAxis) return s; // Should not happen if series exists
+      if (!yAxis) return s;
 
-      const newPoints = s.points.map(p => {
+      const updatedPoints = s.points.map(p => {
         if (!ws.selectedPointIds.includes(p.id)) return p;
         const newPx = p.x + dx;
         const newPy = p.y + dy;
         const coords = pixelToData(newPx, newPy, xAxis, yAxis);
-        return {
-          ...p,
-          x: newPx,
-          y: newPy,
-          dataX: coords?.x,
-          dataY: coords?.y
-        };
-      }).sort((a, b) => (a.dataX || 0) - (b.dataX || 0));
+        return coords ? { ...p, x: newPx, y: newPy, dataX: coords.x, dataY: coords.y } : p;
+      });
 
-      return updateSeriesFit({ ...s, points: newPoints });
+      return updateSeriesFit({ ...s, points: updatedPoints });
+    });
+
+    // Nudge single points
+    const activeAxisId = ws.activeYAxisId || (ws.yAxes[0] ? ws.yAxes[0].id : null);
+    const activeYAxis = activeAxisId ? ws.yAxes.find(y => y.id === activeAxisId)?.calibration : null;
+
+    const updatedSinglePoints = ws.singlePoints.map(p => {
+      if (!ws.selectedPointIds.includes(p.id)) return p;
+      if (!activeYAxis) return p;
+
+      const newPx = p.x + dx;
+      const newPy = p.y + dy;
+      const coords = pixelToData(newPx, newPy, ws.xAxis, activeYAxis);
+      return coords ? { ...p, x: newPx, y: newPy, dataX: coords.x, dataY: coords.y } : p;
     });
 
     const newHistory = ws.history ? ws.history.slice(0, ws.historyIndex + 1) : [];
@@ -821,6 +886,7 @@ export const useStore = create<StoreState>((set) => ({
 
     return {
       series: updatedSeries,
+      singlePoints: updatedSinglePoints,
       history: newHistory,
       historyIndex: newHistory.length - 1
     };

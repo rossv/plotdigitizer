@@ -52,7 +52,7 @@ export type Series = {
   labelPosition?: { x: number; y: number };
 };
 
-export type AppMode = 'IDLE' | 'CALIBRATE_X' | 'CALIBRATE_Y' | 'DIGITIZE' | 'TRACE' | 'SELECT';
+export type AppMode = 'IDLE' | 'CALIBRATE_X' | 'CALIBRATE_Y' | 'DIGITIZE' | 'TRACE' | 'SELECT' | 'SINGLE_POINT';
 
 export type SnapConfig = {
   mode: 'decimal' | 'sigfig';

@@ -1,6 +1,6 @@
 
 import React, { useEffect, useRef } from 'react';
-import { Plus, ScanLine, Image as ImageIcon, Sun, Moon, Trash2, Download, Database, Undo, Redo, Camera, Copy, ImageOff, Save, FolderOpen, X, MousePointer2, Magnet, HelpCircle } from 'lucide-react';
+import { Plus, ScanLine, Image as ImageIcon, Sun, Moon, Trash2, Download, Database, Undo, Redo, Camera, Copy, ImageOff, Save, FolderOpen, X, MousePointer2, Magnet, HelpCircle, MapPin } from 'lucide-react';
 import { DigitizerCanvas } from './DigitizerCanvas';
 import type { DigitizerHandle } from './DigitizerCanvas';
 import { useStore } from './store';
@@ -14,6 +14,7 @@ import * as pdfjsLib from 'pdfjs-dist';
 
 export default function App() {
   const digitizerRef = useRef<DigitizerHandle>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const [pdfDocument, setPdfDocument] = React.useState<pdfjsLib.PDFDocumentProxy | null>(null);
   const [isSnappingToolOpen, setIsSnappingToolOpen] = React.useState(false);
   const [isHelpOpen, setIsHelpOpen] = React.useState(false);
@@ -333,6 +334,7 @@ export default function App() {
             <div className="flex gap-2">
               <label className="flex-1 cursor-pointer">
                 <input
+                  ref={fileInputRef}
                   type="file"
                   accept=".pdf,image/*"
                   onChange={handleFile}
@@ -651,10 +653,25 @@ export default function App() {
               >
                 Wand
               </button>
+
+              <button
+                disabled={!isCalibrated}
+                onClick={() => setMode(mode === 'SINGLE_POINT' ? 'IDLE' : 'SINGLE_POINT')}
+                className={`flex items-center justify-center gap-2 rounded-xl px-3 py-3 text-sm font-bold transition shadow-sm ${mode === 'SINGLE_POINT'
+                  ? 'bg-amber-500 text-white shadow-amber-500/20'
+                  : isCalibrated
+                    ? 'bg-amber-50 dark:bg-amber-900/20 text-amber-700 dark:text-amber-400 hover:bg-amber-100 dark:hover:bg-amber-900/30 ring-1 ring-inset ring-amber-600/20'
+                    : 'bg-slate-100 dark:bg-slate-800 text-slate-400 cursor-not-allowed'
+                  }`}
+              >
+                <MapPin className="h-4 w-4" />
+                Point
+              </button>
+
               <button
                 disabled={!isCalibrated}
                 onClick={() => setMode(mode === 'SELECT' ? 'IDLE' : 'SELECT')}
-                className={`col-span-2 flex items-center justify-center gap-2 rounded-xl px-3 py-3 text-sm font-bold transition shadow-sm ${mode === 'SELECT'
+                className={`flex items-center justify-center gap-2 rounded-xl px-3 py-3 text-sm font-bold transition shadow-sm ${mode === 'SELECT'
                   ? 'bg-blue-600 text-white shadow-blue-500/20'
                   : isCalibrated
                     ? 'bg-blue-50 dark:bg-blue-900/20 text-blue-700 dark:text-blue-400 hover:bg-blue-100 dark:hover:bg-blue-900/30 ring-1 ring-inset ring-blue-600/20'
@@ -662,7 +679,7 @@ export default function App() {
                   }`}
               >
                 <MousePointer2 className="h-4 w-4" />
-                Select / Edit
+                Select
               </button>
             </div>
           </div>
@@ -867,7 +884,7 @@ export default function App() {
           </div>
 
           <div className="flex-1 relative overflow-hidden">
-            <DigitizerCanvas ref={digitizerRef} />
+            <DigitizerCanvas ref={digitizerRef} onLoadImage={() => fileInputRef.current?.click()} />
           </div>
         </div>
       </div>

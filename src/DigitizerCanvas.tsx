@@ -104,9 +104,14 @@ export interface DigitizerHandle {
   toDataURL: (options?: { graphicsOnly?: boolean }) => string | null;
 }
 
-export const DigitizerCanvas = forwardRef<DigitizerHandle>((_, ref) => {
+export interface DigitizerCanvasProps {
+  onLoadImage?: () => void;
+}
+
+export const DigitizerCanvas = forwardRef<DigitizerHandle, DigitizerCanvasProps>(({ onLoadImage }, ref) => {
   const {
     addPoint,
+    addSinglePoint,
     setPendingCalibrationPoint,
     updateSeriesLabelPosition,
     activeWorkspaceId,
@@ -118,7 +123,6 @@ export const DigitizerCanvas = forwardRef<DigitizerHandle>((_, ref) => {
   } = useStore();
 
   const activeWorkspace = workspaces.find(w => w.id === activeWorkspaceId);
-  // We can return null or a skeleton if no workspace, but app should ensure one exists
   if (!activeWorkspace) return null;
 
   const { imageUrl, mode, xAxis, xAxisName, series, yAxes, activeYAxisId, selectedPointIds } = activeWorkspace;
@@ -346,6 +350,8 @@ export const DigitizerCanvas = forwardRef<DigitizerHandle>((_, ref) => {
 
     if (mode === 'DIGITIZE') {
       addPoint(ptr.x, ptr.y);
+    } else if (mode === 'SINGLE_POINT') {
+      addSinglePoint(ptr.x, ptr.y);
     } else if (mode === 'TRACE') {
       if (!image) return;
 
@@ -368,7 +374,6 @@ export const DigitizerCanvas = forwardRef<DigitizerHandle>((_, ref) => {
 
       if (tracedPoints.length === 0) return;
 
-      // Ask user for number of points
       // Ask user for number of points
       const countStr = prompt('How many points do you want to add?', '20');
       if (!countStr) return;
@@ -415,7 +420,6 @@ export const DigitizerCanvas = forwardRef<DigitizerHandle>((_, ref) => {
         for (let i = 1; i < desiredCount - 1; i++) {
           const targetX = minX + (step * i);
           // Find closest point in uniquePoints to targetX
-          // Since uniquePoints is sorted by x, we can optimize, but simple linear scan or find is fine for reasonable counts
           const closest = uniquePoints.reduce((prev, curr) => {
             return (Math.abs(curr.x - targetX) < Math.abs(prev.x - targetX) ? curr : prev);
           });
@@ -440,15 +444,25 @@ export const DigitizerCanvas = forwardRef<DigitizerHandle>((_, ref) => {
     }
   };
 
-  const points = React.useMemo(() =>
-    series.flatMap((ser) => ser.points.map((p) => ({
+  const points = React.useMemo(() => {
+    const seriesPoints = series.flatMap((ser) => ser.points.map((p) => ({
       ...p,
       color: ser.color,
       selected: selectedPointIds?.includes(p.id),
       showPointCoordinates: ser.showPointCoordinates,
-    }))),
-    [series, selectedPointIds]
-  );
+      isSinglePoint: false,
+    })));
+
+    const singlePts = (activeWorkspace.singlePoints || []).map(p => ({
+      ...p,
+      color: '#eab308', // Yellow-500 equivalent, distinct from default red
+      selected: selectedPointIds?.includes(p.id),
+      showPointCoordinates: true,
+      isSinglePoint: true,
+    }));
+
+    return [...seriesPoints, ...singlePts];
+  }, [series, activeWorkspace.singlePoints, selectedPointIds]);
 
   const handleStageMouseDown = (e: KonvaEventObject<MouseEvent>) => {
     if (mode !== 'SELECT') return;
@@ -517,8 +531,17 @@ export const DigitizerCanvas = forwardRef<DigitizerHandle>((_, ref) => {
   return (
     <div ref={containerRef} className="flex-1 h-full w-full overflow-hidden relative bg-transparent">
       {!imageUrl && (
-        <div className="absolute inset-0 flex items-center justify-center text-slate-400 text-sm pointer-events-none">
-          Load an image to get started
+        <div
+          onClick={onLoadImage}
+          className="absolute inset-0 z-50 flex flex-col items-center justify-center text-slate-400 cursor-pointer hover:bg-slate-50/50 dark:hover:bg-slate-900/50 transition-colors"
+        >
+          <div className="p-8 rounded-2xl border-2 border-dashed border-slate-300 dark:border-slate-700 flex flex-col items-center gap-3 bg-slate-50/50 dark:bg-slate-900/50 hover:bg-white dark:hover:bg-slate-900 transition-colors shadow-sm">
+            <div className="p-3 bg-blue-50 dark:bg-blue-900/20 rounded-full text-blue-500 mb-1">
+              <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect width="18" height="18" x="3" y="3" rx="2" ry="2" /><circle cx="9" cy="9" r="2" /><path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21" /></svg>
+            </div>
+            <span className="font-semibold text-lg text-slate-600 dark:text-slate-300">Click to load Image or PDF</span>
+            <span className="text-sm text-slate-400">or paste from clipboard (Ctrl+V)</span>
+          </div>
         </div>
       )}
 
@@ -796,7 +819,7 @@ export const DigitizerCanvas = forwardRef<DigitizerHandle>((_, ref) => {
               key={p.id}
               x={p.x}
               y={p.y}
-              radius={(p.selected ? 6 : 4) / currentScale}
+              radius={(p['isSinglePoint'] ? (p.selected ? 10 : 8) : (p.selected ? 6 : 4)) / currentScale}
               fill={p.color}
               stroke={p.selected ? '#3b82f6' : '#0f172a'}
               strokeWidth={(p.selected ? 3 : 1) / currentScale}
@@ -806,7 +829,7 @@ export const DigitizerCanvas = forwardRef<DigitizerHandle>((_, ref) => {
               }}
               onClick={(e) => {
                 e.cancelBubble = true;
-                if (mode === 'SELECT' || mode === 'DIGITIZE') {
+                if (mode === 'SELECT' || mode === 'DIGITIZE' || mode === 'SINGLE_POINT') {
                   togglePointSelection(p.id, e.evt.ctrlKey || e.evt.shiftKey);
                 }
               }}
