@@ -1,0 +1,773 @@
+/* eslint-disable @typescript-eslint/no-unused-vars */
+/**
+ * Smart Wand line tracing for plot digitization.
+ *
+ * Deterministic pipeline:
+ *  1) Sample local color/brightness stats around the seed (robust median/MAD).
+ *  2) Compute Sobel gradient magnitude (edge strength).
+ *  3) Estimate & penalize gridlines (long straight runs in row/col).
+ *  4) Build candidate mask from: color proximity OR strong edges, minus grid penalty.
+ *  5) Skeletonize (Zhang–Suen thinning).
+ *  6) Trace a polyline from seed along skeleton with direction continuity.
+ *  7) Bridge small gaps (use directional search with a cost map).
+ *  8) Simplify and (optionally) resample.
+ *
+ * No ML, no randomness. Same input => same output.
+ */
+
+export type Point = { x: number; y: number };
+
+export type SmartWandOptions = {
+  // Seed sampling window half-size (pixels).
+  seedWindow: number;
+
+  // How “similar” to the seed color to accept (higher = looser).
+  // This is in robust z-score space using MAD.
+  colorZ: number;
+
+  // Sobel gradient threshold (0..1) for edge-based inclusion (helps when color varies).
+  edgeThresh: number;
+
+  // Penalize likely gridlines; larger => more aggressive suppression.
+  gridPenalty: number;
+
+  // Minimum run length (pixels) to treat as gridline in rows/cols.
+  gridRun: number;
+
+  // Morphology-ish cleanup: remove tiny specks smaller than this.
+  minComponent: number;
+
+  // Gap bridging:
+  maxGap: number; // pixels
+  gapSearchAngleDeg: number; // cone around current direction
+
+  // Trace length limits:
+  maxPoints: number;
+  maxSteps: number;
+
+  // Output cleanup:
+  simplifyEps: number; // pixels for RDP
+  resampleStep: number | null; // if set, resample every N pixels
+};
+
+export const DEFAULT_SMART_WAND_OPTIONS: SmartWandOptions = {
+  seedWindow: 6,
+  colorZ: 3.5,
+  edgeThresh: 0.18,
+  gridPenalty: 0.8,
+  gridRun: 18,
+  minComponent: 40,
+  maxGap: 14,
+  gapSearchAngleDeg: 55,
+  maxPoints: 6000,
+  maxSteps: 250000,
+  simplifyEps: 1.2,
+  resampleStep: null,
+};
+
+type Img = {
+  data: Uint8ClampedArray;
+  width: number;
+  height: number;
+};
+
+function clamp(v: number, lo: number, hi: number) {
+  return Math.max(lo, Math.min(hi, v));
+}
+
+function idx(x: number, y: number, w: number) {
+  return (y * w + x) * 4;
+}
+
+function getRGBA(img: Img, x: number, y: number) {
+  const i = idx(x, y, img.width);
+  const d = img.data;
+  return { r: d[i], g: d[i + 1], b: d[i + 2], a: d[i + 3] };
+}
+
+function srgbToLin(c: number) {
+  const v = c / 255;
+  return v <= 0.04045 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4);
+}
+
+// Simple “perceptual-ish” space: linear RGB + luma.
+// Good enough for plot lines; avoids pulling in a full Lab conversion.
+function rgbFeatures(r: number, g: number, b: number) {
+  const rl = srgbToLin(r);
+  const gl = srgbToLin(g);
+  const bl = srgbToLin(b);
+  const luma = 0.2126 * rl + 0.7152 * gl + 0.0722 * bl;
+  return { rl, gl, bl, luma };
+}
+
+function median(arr: number[]) {
+  const a = arr.slice().sort((x, y) => x - y);
+  const n = a.length;
+  if (!n) return 0;
+  const mid = Math.floor(n / 2);
+  return n % 2 ? a[mid] : 0.5 * (a[mid - 1] + a[mid]);
+}
+
+function mad(arr: number[], med: number) {
+  const dev = arr.map((v) => Math.abs(v - med));
+  return median(dev) || 1e-9;
+}
+
+function angleBetween(ax: number, ay: number, bx: number, by: number) {
+  const da = Math.hypot(ax, ay);
+  const db = Math.hypot(bx, by);
+  if (da < 1e-9 || db < 1e-9) return Math.PI;
+  const dot = (ax * bx + ay * by) / (da * db);
+  return Math.acos(clamp(dot, -1, 1));
+}
+
+function sobelMagnitude01(img: Img): Float32Array {
+  const { width: w, height: h } = img;
+  const out = new Float32Array(w * h);
+
+  // Precompute luma
+  const lum = new Float32Array(w * h);
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      const { r, g, b, a } = getRGBA(img, x, y);
+      // Treat fully transparent as white background
+      const rr = a === 0 ? 255 : r;
+      const gg = a === 0 ? 255 : g;
+      const bb = a === 0 ? 255 : b;
+      const { rl, gl, bl } = rgbFeatures(rr, gg, bb);
+      lum[y * w + x] = 0.2126 * rl + 0.7152 * gl + 0.0722 * bl;
+    }
+  }
+
+  // Sobel kernels
+  // gx = [-1 0 1; -2 0 2; -1 0 1]
+  // gy = [-1 -2 -1; 0 0 0; 1 2 1]
+  let maxMag = 1e-9;
+  for (let y = 1; y < h - 1; y++) {
+    for (let x = 1; x < w - 1; x++) {
+      const a00 = lum[(y - 1) * w + (x - 1)];
+      const a01 = lum[(y - 1) * w + x];
+      const a02 = lum[(y - 1) * w + (x + 1)];
+      const a10 = lum[y * w + (x - 1)];
+      const a12 = lum[y * w + (x + 1)];
+      const a20 = lum[(y + 1) * w + (x - 1)];
+      const a21 = lum[(y + 1) * w + x];
+      const a22 = lum[(y + 1) * w + (x + 1)];
+
+      const gx = -a00 + a02 - 2 * a10 + 2 * a12 - a20 + a22;
+      const gy = -a00 - 2 * a01 - a02 + a20 + 2 * a21 + a22;
+
+      const mag = Math.hypot(gx, gy);
+      out[y * w + x] = mag;
+      if (mag > maxMag) maxMag = mag;
+    }
+  }
+
+  // normalize to 0..1
+  for (let i = 0; i < out.length; i++) out[i] = out[i] / maxMag;
+  return out;
+}
+
+/**
+ * Detect “gridline-ish” pixels by scanning for long runs of dark-ish pixels
+ * in rows and columns. Then return a penalty map in [0..1] (1 = likely grid).
+ *
+ * This is intentionally simple + deterministic: gridlines are usually long,
+ * straight, and span many pixels horizontally/vertically.
+ */
+function gridPenaltyMap(img: Img, edge01: Float32Array, runLen: number): Float32Array {
+  const { width: w, height: h } = img;
+  const pen = new Float32Array(w * h);
+
+  // Use luma + edge as a proxy for “line-ish”
+  const lineish = new Uint8Array(w * h);
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      const { r, g, b, a } = getRGBA(img, x, y);
+      const rr = a === 0 ? 255 : r;
+      const gg = a === 0 ? 255 : g;
+      const bb = a === 0 ? 255 : b;
+      const { luma } = rgbFeatures(rr, gg, bb);
+      const e = edge01[y * w + x];
+      // dark-ish OR edge-ish
+      lineish[y * w + x] = luma < 0.65 || e > 0.18 ? 1 : 0;
+    }
+  }
+
+  // Horizontal runs
+  for (let y = 0; y < h; y++) {
+    let runStart = -1;
+    for (let x = 0; x <= w; x++) {
+      const v = x < w ? lineish[y * w + x] : 0;
+      if (v && runStart < 0) runStart = x;
+      if (!v && runStart >= 0) {
+        const len = x - runStart;
+        if (len >= runLen) {
+          for (let k = runStart; k < x; k++) pen[y * w + k] = 1;
+        }
+        runStart = -1;
+      }
+    }
+  }
+
+  // Vertical runs
+  for (let x = 0; x < w; x++) {
+    let runStart = -1;
+    for (let y = 0; y <= h; y++) {
+      const v = y < h ? lineish[y * w + x] : 0;
+      if (v && runStart < 0) runStart = y;
+      if (!v && runStart >= 0) {
+        const len = y - runStart;
+        if (len >= runLen) {
+          for (let k = runStart; k < y; k++) pen[k * w + x] = 1;
+        }
+        runStart = -1;
+      }
+    }
+  }
+
+  // Feather: gridlines are thin; expand penalty by 1px to be meaner.
+  const out = new Float32Array(w * h);
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      let m = 0;
+      for (let dy = -1; dy <= 1; dy++) {
+        for (let dx = -1; dx <= 1; dx++) {
+          const xx = x + dx, yy = y + dy;
+          if (xx < 0 || yy < 0 || xx >= w || yy >= h) continue;
+          m = Math.max(m, pen[yy * w + xx]);
+        }
+      }
+      out[y * w + x] = m;
+    }
+  }
+  return out;
+}
+
+/**
+ * Build candidate mask for the target curve.
+ * Criteria: close to seed color (robust z-score) OR strong edges,
+ * then subtract grid penalty.
+ */
+function buildCandidateMask(img: Img, seed: Point, edge01: Float32Array, opts: SmartWandOptions): Uint8Array {
+  const { width: w, height: h } = img;
+
+  // Sample seed neighborhood to get robust stats in feature space
+  const sw = opts.seedWindow;
+  const rls: number[] = [];
+  const gls: number[] = [];
+  const bls: number[] = [];
+  const lms: number[] = [];
+
+  for (let dy = -sw; dy <= sw; dy++) {
+    for (let dx = -sw; dx <= sw; dx++) {
+      const x = clamp(Math.round(seed.x + dx), 0, w - 1);
+      const y = clamp(Math.round(seed.y + dy), 0, h - 1);
+      const { r, g, b, a } = getRGBA(img, x, y);
+      const rr = a === 0 ? 255 : r;
+      const gg = a === 0 ? 255 : g;
+      const bb = a === 0 ? 255 : b;
+      const f = rgbFeatures(rr, gg, bb);
+      rls.push(f.rl); gls.push(f.gl); bls.push(f.bl); lms.push(f.luma);
+    }
+  }
+
+  const mRL = median(rls), mGL = median(gls), mBL = median(bls), mLM = median(lms);
+  const sRL = mad(rls, mRL), sGL = mad(gls, mGL), sBL = mad(bls, mBL), sLM = mad(lms, mLM);
+
+  const gridPen = gridPenaltyMap(img, edge01, opts.gridRun);
+
+  const mask = new Uint8Array(w * h);
+
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      const { r, g, b, a } = getRGBA(img, x, y);
+      const rr = a === 0 ? 255 : r;
+      const gg = a === 0 ? 255 : g;
+      const bb = a === 0 ? 255 : b;
+      const f = rgbFeatures(rr, gg, bb);
+
+      // robust z distance (L1-ish)
+      const z =
+        Math.abs((f.rl - mRL) / sRL) +
+        Math.abs((f.gl - mGL) / sGL) +
+        Math.abs((f.bl - mBL) / sBL) +
+        0.75 * Math.abs((f.luma - mLM) / sLM);
+
+      const e = edge01[y * w + x];
+      const gp = gridPen[y * w + x];
+
+      const colorOK = z <= opts.colorZ;
+      const edgeOK = e >= opts.edgeThresh;
+
+      // Penalize gridlines: if it's very grid-like, require stronger evidence.
+      const gridFactor = 1 - opts.gridPenalty * gp; // 1 good, 0 bad
+      const accept = (colorOK || edgeOK) && gridFactor > 0.25;
+
+      mask[y * w + x] = accept ? 1 : 0;
+    }
+  }
+
+  return removeSmallComponents(mask, w, h, opts.minComponent);
+}
+
+/**
+ * Connected-components filtering on a binary mask (4-connected).
+ */
+function removeSmallComponents(mask: Uint8Array, w: number, h: number, minSize: number): Uint8Array {
+  const out = mask.slice();
+  const seen = new Uint8Array(w * h);
+  const qx: number[] = [];
+  const qy: number[] = [];
+
+  const dirs = [
+    [1, 0], [-1, 0], [0, 1], [0, -1],
+  ];
+
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      const p = y * w + x;
+      if (!out[p] || seen[p]) continue;
+
+      qx.length = 0; qy.length = 0;
+      qx.push(x); qy.push(y);
+      seen[p] = 1;
+
+      const comp: number[] = [p];
+
+      for (let qi = 0; qi < qx.length; qi++) {
+        const cx = qx[qi], cy = qy[qi];
+        for (const [dx, dy] of dirs) {
+          const nx = cx + dx, ny = cy + dy;
+          if (nx < 0 || ny < 0 || nx >= w || ny >= h) continue;
+          const np = ny * w + nx;
+          if (!out[np] || seen[np]) continue;
+          seen[np] = 1;
+          qx.push(nx); qy.push(ny);
+          comp.push(np);
+        }
+      }
+
+      if (comp.length < minSize) {
+        for (const pp of comp) out[pp] = 0;
+      }
+    }
+  }
+  return out;
+}
+
+/**
+ * Zhang–Suen thinning (binary skeletonization).
+ * Input/output are 0/1 masks.
+ */
+function zhangSuenThin(bin: Uint8Array, w: number, h: number): Uint8Array {
+  const out = bin.slice();
+  const toDel: number[] = [];
+
+  const n8 = (x: number, y: number) => {
+    // P2..P9 clockwise starting at north
+    const p2 = out[(y - 1) * w + x] || 0;
+    const p3 = out[(y - 1) * w + (x + 1)] || 0;
+    const p4 = out[y * w + (x + 1)] || 0;
+    const p5 = out[(y + 1) * w + (x + 1)] || 0;
+    const p6 = out[(y + 1) * w + x] || 0;
+    const p7 = out[(y + 1) * w + (x - 1)] || 0;
+    const p8 = out[y * w + (x - 1)] || 0;
+    const p9 = out[(y - 1) * w + (x - 1)] || 0;
+    return [p2, p3, p4, p5, p6, p7, p8, p9];
+  };
+
+  const transitions = (p: number[]) => {
+    // count 0->1 transitions in circular sequence
+    let a = 0;
+    for (let i = 0; i < 8; i++) {
+      const cur = p[i], nxt = p[(i + 1) % 8];
+      if (cur === 0 && nxt === 1) a++;
+    }
+    return a;
+  };
+
+  const neighbors = (p: number[]) => p.reduce((s, v) => s + v, 0);
+
+  let changed = true;
+  let iter = 0;
+  while (changed && iter++ < 80) {
+    changed = false;
+
+    // step 1
+    toDel.length = 0;
+    for (let y = 1; y < h - 1; y++) {
+      for (let x = 1; x < w - 1; x++) {
+        const P1 = out[y * w + x];
+        if (!P1) continue;
+        const p = n8(x, y);
+        const B = neighbors(p);
+        const A = transitions(p);
+        const [p2, p3, p4, p5, p6, p7, p8, p9] = p;
+        if (
+          A === 1 &&
+          B >= 2 && B <= 6 &&
+          (p2 * p4 * p6) === 0 &&
+          (p4 * p6 * p8) === 0
+        ) {
+          toDel.push(y * w + x);
+        }
+      }
+    }
+    if (toDel.length) {
+      changed = true;
+      for (const p of toDel) out[p] = 0;
+    }
+
+    // step 2
+    toDel.length = 0;
+    for (let y = 1; y < h - 1; y++) {
+      for (let x = 1; x < w - 1; x++) {
+        const P1 = out[y * w + x];
+        if (!P1) continue;
+        const p = n8(x, y);
+        const B = neighbors(p);
+        const A = transitions(p);
+        const [p2, p3, p4, p5, p6, p7, p8, p9] = p;
+        if (
+          A === 1 &&
+          B >= 2 && B <= 6 &&
+          (p2 * p4 * p8) === 0 &&
+          (p2 * p6 * p8) === 0
+        ) {
+          toDel.push(y * w + x);
+        }
+      }
+    }
+    if (toDel.length) {
+      changed = true;
+      for (const p of toDel) out[p] = 0;
+    }
+  }
+  return out;
+}
+
+function nearestOnMask(mask: Uint8Array, w: number, h: number, seed: Point, r = 12): Point | null {
+  const sx = clamp(Math.round(seed.x), 0, w - 1);
+  const sy = clamp(Math.round(seed.y), 0, h - 1);
+  if (mask[sy * w + sx]) return { x: sx, y: sy };
+
+  let best: Point | null = null;
+  let bestD = Infinity;
+
+  for (let dy = -r; dy <= r; dy++) {
+    for (let dx = -r; dx <= r; dx++) {
+      const x = sx + dx, y = sy + dy;
+      if (x < 0 || y < 0 || x >= w || y >= h) continue;
+      if (!mask[y * w + x]) continue;
+      const d = dx * dx + dy * dy;
+      if (d < bestD) {
+        bestD = d;
+        best = { x, y };
+      }
+    }
+  }
+  return best;
+}
+
+/**
+ * Trace skeleton as a polyline.
+ * We do “two-sided” growth: forward/back from seed with direction continuity.
+ */
+function traceSkeleton(
+  skel: Uint8Array,
+  w: number,
+  h: number,
+  start: Point,
+  opts: SmartWandOptions
+): Point[] {
+  const visited = new Uint8Array(w * h);
+
+  const step = (cur: Point, dir: { x: number; y: number } | null): { next: Point | null; ndir: { x: number; y: number } | null } => {
+    const cx = cur.x, cy = cur.y;
+
+    // 8-neighbors
+    const nbrs: Point[] = [];
+    for (let dy = -1; dy <= 1; dy++) {
+      for (let dx = -1; dx <= 1; dx++) {
+        if (!dx && !dy) continue;
+        const nx = cx + dx, ny = cy + dy;
+        if (nx < 0 || ny < 0 || nx >= w || ny >= h) continue;
+        if (!skel[ny * w + nx]) continue;
+        if (visited[ny * w + nx]) continue;
+        nbrs.push({ x: nx, y: ny });
+      }
+    }
+    if (!nbrs.length) return { next: null, ndir: dir };
+
+    // Score by direction continuity (prefer small turn), then by “keep moving” (avoid dithering)
+    let best = nbrs[0];
+    let bestScore = -Infinity;
+
+    for (const n of nbrs) {
+      const vx = n.x - cx;
+      const vy = n.y - cy;
+      const len = Math.hypot(vx, vy);
+
+      let score = 0;
+
+      // prefer forward direction
+      if (dir) {
+        const ang = angleBetween(dir.x, dir.y, vx, vy);
+        // within 180deg; penalize turns
+        score += -ang * 2.5;
+        // discourage U-turns
+        if (ang > Math.PI * 0.8) score -= 4;
+      }
+
+      // slight bias for longer step (diagonal > orthogonal)
+      score += 0.15 * len;
+
+      // prefer unvisited neighbors (already enforced) and centrality-ish:
+      // avoid hugging borders (common for axes)
+      const border = Math.min(n.x, n.y, w - 1 - n.x, h - 1 - n.y);
+      score += clamp(border / 40, 0, 1) * 0.2;
+
+      if (score > bestScore) {
+        bestScore = score;
+        best = n;
+      }
+    }
+
+    const ndir = { x: best.x - cx, y: best.y - cy };
+    return { next: best, ndir };
+  };
+
+  const walkOneSide = (dirHint: { x: number; y: number } | null): Point[] => {
+    const pts: Point[] = [];
+    let cur = start;
+    let dir = dirHint;
+
+    let steps = 0;
+    while (steps++ < opts.maxSteps && pts.length < opts.maxPoints) {
+      visited[cur.y * w + cur.x] = 1;
+      pts.push({ x: cur.x, y: cur.y });
+
+      const { next, ndir } = step(cur, dir);
+      if (next) {
+        cur = next;
+        dir = ndir;
+        continue;
+      }
+
+      // Try gap bridging when skeleton is broken (dotted lines, intersections)
+      const bridged = bridgeGap(skel, visited, w, h, cur, dir, opts);
+      if (bridged) {
+        cur = bridged.next;
+        dir = bridged.dir;
+        continue;
+      }
+
+      break;
+    }
+    return pts;
+  };
+
+  // First, take a tiny step to seed a direction (if possible)
+  let initialDir: { x: number; y: number } | null = null;
+  const first = step(start, null);
+  if (first.next) initialDir = { x: first.next.x - start.x, y: first.next.y - start.y };
+
+  // Walk forward
+  const fwd = walkOneSide(initialDir);
+
+  // Walk backward (invert direction)
+  // Reset start visited so backward can include it; then we’ll merge.
+  visited[start.y * w + start.x] = 0;
+  const bwd = walkOneSide(initialDir ? { x: -initialDir.x, y: -initialDir.y } : null);
+
+  // Merge: bwd includes start first; reverse it and drop duplicate start
+  bwd.reverse();
+  if (bwd.length && fwd.length && bwd[bwd.length - 1].x === fwd[0].x && bwd[bwd.length - 1].y === fwd[0].y) {
+    bwd.pop();
+  }
+  return bwd.concat(fwd);
+}
+
+/**
+ * Attempt to bridge a small gap by searching ahead in a cone around current direction
+ * for the next skeleton pixel. Deterministic: nearest by (distance + angle penalty).
+ */
+function bridgeGap(
+  skel: Uint8Array,
+  visited: Uint8Array,
+  w: number,
+  h: number,
+  cur: Point,
+  dir: { x: number; y: number } | null,
+  opts: SmartWandOptions
+): { next: Point; dir: { x: number; y: number } } | null {
+  if (!dir) return null;
+
+  const maxR = opts.maxGap;
+  const cone = (opts.gapSearchAngleDeg * Math.PI) / 180;
+
+  let best: Point | null = null;
+  let bestScore = Infinity;
+
+  for (let r = 2; r <= maxR; r++) {
+    // sample points on a square ring (deterministic)
+    for (let dy = -r; dy <= r; dy++) {
+      for (let dx = -r; dx <= r; dx++) {
+        if (Math.max(Math.abs(dx), Math.abs(dy)) !== r) continue;
+        const x = cur.x + dx, y = cur.y + dy;
+        if (x < 0 || y < 0 || x >= w || y >= h) continue;
+        const p = y * w + x;
+        if (!skel[p] || visited[p]) continue;
+
+        const ang = angleBetween(dir.x, dir.y, dx, dy);
+        if (ang > cone) continue;
+
+        const dist = Math.hypot(dx, dy);
+        const score = dist + 6 * ang; // prefer close + straight
+
+        if (score < bestScore) {
+          bestScore = score;
+          best = { x, y };
+        }
+      }
+    }
+    // if we found something at this radius, stop (closest ring wins)
+    if (best) break;
+  }
+
+  if (!best) return null;
+  return { next: best, dir: { x: best.x - cur.x, y: best.y - cur.y } };
+}
+
+/**
+ * Ramer–Douglas–Peucker polyline simplification.
+ */
+function simplifyRDP(points: Point[], eps: number): Point[] {
+  if (points.length < 3) return points.slice();
+
+  const sqEps = eps * eps;
+
+  const dist2PointToSeg = (p: Point, a: Point, b: Point) => {
+    const vx = b.x - a.x, vy = b.y - a.y;
+    const wx = p.x - a.x, wy = p.y - a.y;
+    const c1 = wx * vx + wy * vy;
+    if (c1 <= 0) return (p.x - a.x) ** 2 + (p.y - a.y) ** 2;
+    const c2 = vx * vx + vy * vy;
+    if (c2 <= c1) return (p.x - b.x) ** 2 + (p.y - b.y) ** 2;
+    const t = c1 / c2;
+    const px = a.x + t * vx, py = a.y + t * vy;
+    return (p.x - px) ** 2 + (p.y - py) ** 2;
+  };
+
+  const keep = new Uint8Array(points.length);
+  keep[0] = 1;
+  keep[points.length - 1] = 1;
+
+  const stack: Array<[number, number]> = [[0, points.length - 1]];
+
+  while (stack.length) {
+    const [i0, i1] = stack.pop()!;
+    let maxD = 0;
+    let imax = -1;
+    const a = points[i0], b = points[i1];
+
+    for (let i = i0 + 1; i < i1; i++) {
+      const d = dist2PointToSeg(points[i], a, b);
+      if (d > maxD) {
+        maxD = d;
+        imax = i;
+      }
+    }
+
+    if (maxD > sqEps && imax >= 0) {
+      keep[imax] = 1;
+      stack.push([i0, imax], [imax, i1]);
+    }
+  }
+
+  const out: Point[] = [];
+  for (let i = 0; i < points.length; i++) if (keep[i]) out.push(points[i]);
+  return out;
+}
+
+function resamplePolyline(points: Point[], step: number): Point[] {
+  if (points.length < 2) return points.slice();
+  const out: Point[] = [points[0]];
+  let acc = 0;
+
+  for (let i = 1; i < points.length; i++) {
+    const a = out[out.length - 1];
+    const b = points[i];
+    let dx = b.x - a.x, dy = b.y - a.y;
+    let seg = Math.hypot(dx, dy);
+    if (seg < 1e-9) continue;
+
+    while (acc + seg >= step) {
+      const t = (step - acc) / seg;
+      const nx = a.x + t * dx;
+      const ny = a.y + t * dy;
+      out.push({ x: nx, y: ny });
+
+      // restart from this new point to b
+      const na = out[out.length - 1];
+      dx = b.x - na.x; dy = b.y - na.y;
+      seg = Math.hypot(dx, dy);
+      acc = 0;
+      if (seg < 1e-9) break;
+    }
+    acc += seg;
+  }
+
+  if (out.length === 1 || (out[out.length - 1].x !== points[points.length - 1].x || out[out.length - 1].y !== points[points.length - 1].y)) {
+    out.push(points[points.length - 1]);
+  }
+  return out;
+}
+
+/**
+ * Main entry point.
+ *
+ * Pass ImageData-like values:
+ *  - data: Uint8ClampedArray (RGBA)
+ *  - width/height
+ *  - seed point in image pixel coordinates
+ *
+ * Returns polyline points in image pixel coordinates.
+ */
+export function smartWandTrace(
+  image: { data: Uint8ClampedArray; width: number; height: number },
+  seed: Point,
+  options?: Partial<SmartWandOptions>
+): Point[] {
+  const opts: SmartWandOptions = { ...DEFAULT_SMART_WAND_OPTIONS, ...(options ?? {}) };
+  const img: Img = { data: image.data, width: image.width, height: image.height };
+
+  const edge01 = sobelMagnitude01(img);
+  const cand = buildCandidateMask(img, seed, edge01, opts);
+  const skel = zhangSuenThin(cand, img.width, img.height);
+
+  const start = nearestOnMask(skel, img.width, img.height, seed, 18);
+  if (!start) return [];
+
+  let pts = traceSkeleton(skel, img.width, img.height, start, opts);
+
+  // If the skeleton trace is tiny, fall back to tracing on candidates (less strict).
+  if (pts.length < 10) {
+    const start2 = nearestOnMask(cand, img.width, img.height, seed, 18);
+    if (!start2) return [];
+    // crude “trace” on candidate mask: use skeleton trace anyway but with cand as skel
+    pts = traceSkeleton(cand, img.width, img.height, start2, opts);
+  }
+
+  // Cleanup
+  pts = simplifyRDP(pts, opts.simplifyEps);
+
+  if (opts.resampleStep && opts.resampleStep > 0) {
+    pts = resamplePolyline(pts, opts.resampleStep);
+  }
+
+  // Cap output
+  if (pts.length > opts.maxPoints) pts = pts.slice(0, opts.maxPoints);
+  return pts;
+}
