@@ -38,7 +38,7 @@ export const SnappingTool: React.FC<SnappingToolProps> = ({ seriesId, isOpen, on
 
     return (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
-            <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-xl w-full max-w-sm border border-slate-200 dark:border-slate-800 flex flex-col overflow-hidden animate-in fade-in zoom-in-95 duration-200">
+            <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-xl w-full max-w-sm border border-slate-200 dark:border-slate-800 flex flex-col overflow-hidden animate-in fade-in zoom-in-95 duration-200 animate-scale-in">
 
                 {/* Header */}
                 <div className="px-4 py-3 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between bg-slate-50/50 dark:bg-slate-800/30">
@@ -64,8 +64,8 @@ export const SnappingTool: React.FC<SnappingToolProps> = ({ seriesId, isOpen, on
                             <button
                                 onClick={() => setMode('decimal')}
                                 className={`px-3 py-2 rounded-lg text-sm font-medium transition border ${mode === 'decimal'
-                                        ? 'bg-blue-50 dark:bg-blue-900/20 border-blue-200 dark:border-blue-800 text-blue-700 dark:text-blue-300'
-                                        : 'bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800/50'
+                                    ? 'bg-blue-50 dark:bg-blue-900/20 border-blue-200 dark:border-blue-800 text-blue-700 dark:text-blue-300'
+                                    : 'bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800/50'
                                     }`}
                             >
                                 Decimal Places
@@ -73,8 +73,8 @@ export const SnappingTool: React.FC<SnappingToolProps> = ({ seriesId, isOpen, on
                             <button
                                 onClick={() => setMode('sigfig')}
                                 className={`px-3 py-2 rounded-lg text-sm font-medium transition border ${mode === 'sigfig'
-                                        ? 'bg-blue-50 dark:bg-blue-900/20 border-blue-200 dark:border-blue-800 text-blue-700 dark:text-blue-300'
-                                        : 'bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800/50'
+                                    ? 'bg-blue-50 dark:bg-blue-900/20 border-blue-200 dark:border-blue-800 text-blue-700 dark:text-blue-300'
+                                    : 'bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800/50'
                                     }`}
                             >
                                 Significant Figures
@@ -121,8 +121,8 @@ export const SnappingTool: React.FC<SnappingToolProps> = ({ seriesId, isOpen, on
                         <div className="flex gap-4">
                             <label className="flex items-center gap-2 cursor-pointer group">
                                 <div className={`w-5 h-5 rounded border flex items-center justify-center transition ${targets.includes('x')
-                                        ? 'bg-blue-600 border-blue-600 text-white'
-                                        : 'bg-white dark:bg-slate-800 border-slate-300 dark:border-slate-600'
+                                    ? 'bg-blue-600 border-blue-600 text-white'
+                                    : 'bg-white dark:bg-slate-800 border-slate-300 dark:border-slate-600'
                                     }`}>
                                     {targets.includes('x') && <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><polyline points="20 6 9 17 4 12" /></svg>}
                                 </div>
@@ -132,8 +132,8 @@ export const SnappingTool: React.FC<SnappingToolProps> = ({ seriesId, isOpen, on
 
                             <label className="flex items-center gap-2 cursor-pointer group">
                                 <div className={`w-5 h-5 rounded border flex items-center justify-center transition ${targets.includes('y')
-                                        ? 'bg-blue-600 border-blue-600 text-white'
-                                        : 'bg-white dark:bg-slate-800 border-slate-300 dark:border-slate-600'
+                                    ? 'bg-blue-600 border-blue-600 text-white'
+                                    : 'bg-white dark:bg-slate-800 border-slate-300 dark:border-slate-600'
                                     }`}>
                                     {targets.includes('y') && <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><polyline points="20 6 9 17 4 12" /></svg>}
                                 </div>

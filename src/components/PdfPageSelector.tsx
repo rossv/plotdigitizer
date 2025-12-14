@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { ChevronLeft, ChevronRight, Check } from 'lucide-react';
 import * as pdfjsLib from 'pdfjs-dist';
 import { renderPdfPageToDataUrl } from '../utils/pdf-utils';
+import { useStore } from '../store';
 
 interface PdfPageSelectorProps {
     pdfDocument: pdfjsLib.PDFDocumentProxy;
@@ -13,6 +14,7 @@ export const PdfPageSelector: React.FC<PdfPageSelectorProps> = ({ pdfDocument, o
     const [currentPage, setCurrentPage] = useState(1);
     const [previewUrl, setPreviewUrl] = useState<string | null>(null);
     const [isLoading, setIsLoading] = useState(false);
+    const { openModal } = useStore();
 
     const totalPages = pdfDocument.numPages;
 
@@ -54,7 +56,7 @@ export const PdfPageSelector: React.FC<PdfPageSelectorProps> = ({ pdfDocument, o
             onSelectPage(url);
         } catch (error) {
             console.error('Failed to render final page', error);
-            alert('Failed to import page');
+            openModal({ type: 'alert', message: 'Failed to import page' });
             setIsLoading(false);
         }
     };

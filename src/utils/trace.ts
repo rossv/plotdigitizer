@@ -1,3 +1,5 @@
+import { traceCostBased } from './traceCost';
+
 export const traceLine = (
     ctx: CanvasRenderingContext2D,
     startX: number,
@@ -5,6 +7,7 @@ export const traceLine = (
     targetColor: { r: number; g: number; b: number },
     tolerance: number = 50
 ): { x: number; y: number }[] => {
+    // Existing Simple Fill
     const width = ctx.canvas.width;
     const height = ctx.canvas.height;
     const imageData = ctx.getImageData(0, 0, width, height);
@@ -24,11 +27,8 @@ export const traceLine = (
     while (queue.length > 0 && iterations < MAX_ITERATIONS) {
         const { x, y } = queue.shift()!;
         iterations++;
-
-        // Add to result
         points.push({ x, y });
 
-        // Check neighbors
         const neighbors = [
             { x: x + 1, y: y }, { x: x - 1, y: y },
             { x: x, y: y + 1 }, { x: x, y: y - 1 },
@@ -45,7 +45,6 @@ export const traceLine = (
             const r = data[idx];
             const g = data[idx + 1];
             const b = data[idx + 2];
-
             const diff = Math.abs(r - targetColor.r) + Math.abs(g - targetColor.g) + Math.abs(b - targetColor.b);
 
             if (diff <= tolerance) {
@@ -54,9 +53,21 @@ export const traceLine = (
             }
         }
     }
-
-    // Optimize points? Keep all for now, maybe downsample later.
-    // Sort them? BFS explores in waves, so they might not be strictly ordered by line path.
-    // For now return raw cloud of points.
     return points;
+};
+
+
+// The Advanced Tracer
+export const traceLinePath = (
+    ctx: CanvasRenderingContext2D,
+    startX: number,
+    startY: number,
+    targetColor: { r: number; g: number; b: number },
+    tolerance: number = 50
+): { x: number; y: number }[] => {
+
+
+    // Use the new Cost-Based Pathfinding (Livewire/Intelligent Scissors)
+    // This handles solid lines, dashed lines, and gaps robustly.
+    return traceCostBased(ctx, startX, startY, targetColor, tolerance);
 };

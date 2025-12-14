@@ -6,23 +6,98 @@ interface HelpModalProps {
     onClose: () => void;
 }
 
-const changelog = [
-    { hash: 'a113a8e', message: 'feat: implement initial plot digitizer functionality including calibration, pixel-data conversion, and point snapping' },
-    { hash: '0280916', message: 'feat: Implement PDF support, project save/load, workspace management, and calibration input UI with undo/redo functionality.' },
-    { hash: '4dc23e1', message: 'Merge pull request #10 from rossv/codex/2025-12-12-15-33-32-fix-unused-variable-error-in-app.tsx' },
-    { hash: 'cb19949', message: 'Fix build by removing unused imageUrl and adding Vitest types' },
-    { hash: '4e53dc1', message: 'Merge pull request #9 from rossv/codex/2025-12-12-15-29-11-add-configure-pages-step-in-deploy.yml' },
-    { hash: 'd939d14', message: 'Add configure pages step to deploy workflow' },
-    { hash: '4559378', message: 'Merge pull request #5 from rossv/codex/2025-12-12-15-02-33-add-tests-for-generatecsv-function' },
-    { hash: '15c4683', message: 'Merge pull request #6 from rossv/codex/2025-12-12-15-02-36-update-readme.md-for-digitize-toggle' },
-    { hash: '6004d0a', message: 'Merge pull request #7 from rossv/codex/2025-12-12-15-02-38-adjust-undo-implementation-in-store' },
-    { hash: '0a2f3fe', message: 'Merge pull request #8 from rossv/codex/2025-12-12-15-02-40-update-reticle-terminology-in-comment' },
-    { hash: '4112996', message: 'Fix magnifier overlay reticle comment' },
-    { hash: 'bdb6bf7', message: 'Fix undo boundary handling' },
-    { hash: 'f82920a', message: 'Update digitizing instructions' },
-    { hash: 'ed5dd40', message: 'Add Vitest coverage for generateCSV' },
-    { hash: 'cfd2abe', message: 'feat: Implement initial plot digitizer application with core UI, canvas, and state management.' },
-];
+import changelogText from '../../CHANGELOG.md?raw';
+
+interface ChangeLogEntry {
+    version?: string;
+    date?: string;
+    content: React.ReactNode[];
+}
+
+const parseChangelog = (text: string): ChangeLogEntry[] => {
+    const lines = text.split('\n');
+    const entries: ChangeLogEntry[] = [];
+    let currentEntry: ChangeLogEntry | null = null;
+    let currentList: React.ReactElement[] = [];
+
+    const flushList = (entry: ChangeLogEntry) => {
+        if (currentList.length > 0) {
+            entry.content.push(
+                <ul key={`list-${entry.content.length}`} className="list-disc pl-5 space-y-1 mb-4">
+                    {currentList}
+                </ul>
+            );
+            currentList = [];
+        }
+    };
+
+    lines.forEach((line, index) => {
+        const h2Match = line.match(/^## \[(.*?)\] - (.*)/);
+        if (h2Match) {
+            if (currentEntry) {
+                flushList(currentEntry);
+                entries.push(currentEntry);
+            }
+            currentEntry = {
+                version: h2Match[1],
+                date: h2Match[2],
+                content: [],
+            };
+            return;
+        }
+
+        if (!currentEntry) return;
+
+        const h3Match = line.match(/^### (.*)/);
+        if (h3Match) {
+            flushList(currentEntry);
+            currentEntry.content.push(
+                <h4 key={`h4-${index}`} className="font-semibold text-slate-800 dark:text-slate-200 mt-4 mb-2">
+                    {h3Match[1]}
+                </h4>
+            );
+            return;
+        }
+
+        const listMatch = line.match(/^[-*] (.*)/);
+        if (listMatch) {
+            // Check for indented sub-items (simple heuristic)
+            // Ideally we'd track indentation levels, but for this specific changelog format, 
+            // the main items are rendered as top-level bullets.
+            // If the line *before* this one was a list item or sub-item, we are in a list.
+
+            // Actually, let's keep it simple: generic bullet rendering.
+            // Bold text handling: **text**
+            const content = listMatch[1].replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
+
+            currentList.push(
+                <li key={`li-${index}`} className="text-slate-600 dark:text-slate-300" dangerouslySetInnerHTML={{ __html: content }} />
+            );
+            return;
+        }
+
+        // Handle sub-lists (indented) - distinct form top level? 
+        // For simplicity in this regex-based parser, we treat indented dashed lines as list items too.
+        // If we want nested ULs, we need state. For now, flat list is okay or just indented visuals.
+        const subListMatch = line.match(/^\s+[-*] (.*)/);
+        if (subListMatch) {
+            const content = subListMatch[1].replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
+            currentList.push(
+                <li key={`li-${index}`} className="text-slate-600 dark:text-slate-300 ml-4 list-[circle]" dangerouslySetInnerHTML={{ __html: content }} />
+            );
+            return;
+        }
+    });
+
+    if (currentEntry) {
+        flushList(currentEntry);
+        entries.push(currentEntry);
+    }
+
+    return entries;
+};
+
+const changelogEntries = parseChangelog(changelogText);
 
 export const HelpModal: React.FC<HelpModalProps> = ({ isOpen, onClose }) => {
     const [activeTab, setActiveTab] = useState<'usage' | 'changelog' | 'about'>('usage');
@@ -147,11 +222,22 @@ export const HelpModal: React.FC<HelpModalProps> = ({ isOpen, onClose }) => {
                     )}
 
                     {activeTab === 'changelog' && (
-                        <div className="space-y-4">
-                            {changelog.map((commit) => (
-                                <div key={commit.hash} className="flex gap-3 text-sm border-b border-slate-100 dark:border-slate-800 pb-3 last:border-0 last:pb-0">
-                                    <span className="font-mono text-xs text-blue-600 dark:text-blue-400 shrink-0 select-all">{commit.hash}</span>
-                                    <span className="text-slate-600 dark:text-slate-300">{commit.message}</span>
+                        <div className="space-y-6">
+                            {changelogEntries.map((entry, i) => (
+                                <div key={i} className="border-b border-slate-100 dark:border-slate-800 pb-4 last:border-0 last:pb-0">
+                                    <div className="flex items-center justify-between mb-2">
+                                        <div className="flex items-baseline gap-3">
+                                            <h3 className="text-lg font-bold text-slate-800 dark:text-slate-100">
+                                                {entry.version}
+                                            </h3>
+                                            <span className="text-xs font-mono text-slate-400 dark:text-slate-500 bg-slate-100 dark:bg-slate-800 px-1.5 py-0.5 rounded">
+                                                {entry.date}
+                                            </span>
+                                        </div>
+                                    </div>
+                                    <div className="text-sm">
+                                        {entry.content}
+                                    </div>
                                 </div>
                             ))}
                         </div>
@@ -161,13 +247,13 @@ export const HelpModal: React.FC<HelpModalProps> = ({ isOpen, onClose }) => {
                         <div className="space-y-6 text-center py-8">
                             <div>
                                 <img
-                                  src={`${import.meta.env.BASE_URL}logo.png`}
-                                  alt="Logo"
-                                  className="w-20 h-20 mx-auto mb-4 object-contain"
+                                    src={`${import.meta.env.BASE_URL}logo.png`}
+                                    alt="Logo"
+                                    className="w-20 h-20 mx-auto mb-4 object-contain"
                                 />
                                 <h2 className="text-2xl font-bold text-slate-900 dark:text-white mb-2">Plot Digitizer</h2>
                                 <span className="px-2 py-1 rounded-md bg-blue-100 dark:bg-blue-500/20 text-blue-600 dark:text-blue-300 text-xs font-bold tracking-wide uppercase border border-blue-200 dark:border-blue-500/30">
-                                    Version 1.0.0
+                                    Version {__APP_VERSION__}
                                 </span>
                             </div>
 

@@ -1,7 +1,7 @@
 {
   "name": "plot-digitizer",
   "private": true,
-  "version": "0.0.0",
+  "version": "0.1.0",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -13,6 +13,7 @@
     "deploy": "gh-pages -d dist"
   },
   "dependencies": {
+    "@formkit/auto-animate": "^0.9.0",
     "@types/regression": "^2.0.6",
     "clsx": "^2.1.1",
     "konva": "^10.0.12",

@@ -4,7 +4,8 @@ import type { Stage as KonvaStage } from 'konva/lib/Stage';
 import { Circle, Group, Image as KonvaImage, Line as KonvaLine, Layer, Stage, Text, Label, Tag, Rect } from 'react-konva';
 import useImage from 'use-image';
 import { CalibrationInput } from './components/CalibrationInput';
-import { traceLine } from './utils/trace';
+import { traceLine, traceLinePath } from './utils/trace';
+import { pixelToData } from './utils/math';
 import { useStore } from './store';
 
 interface CalibrationHandleProps {
@@ -140,8 +141,9 @@ export const DigitizerCanvas = forwardRef<DigitizerHandle, DigitizerCanvasProps>
   const selectionStartRef = useRef<{ x: number, y: number } | null>(null);
   const [selectionBox, setSelectionBox] = useState<{ x: number, y: number, width: number, height: number } | null>(null);
 
-  // Guide Lines
+  // Guide Lines & Cursor Coords
   const [pointerPos, setPointerPos] = useState<{ x: number, y: number } | null>(null);
+  const [cursorDataCoords, setCursorDataCoords] = useState<{ x: number, y: number } | null>(null);
 
   useImperativeHandle(ref, () => ({
     toDataURL: (options) => {
@@ -249,7 +251,24 @@ export const DigitizerCanvas = forwardRef<DigitizerHandle, DigitizerCanvasProps>
 
     // Update pointer pos for Guide Lines
     const relPos = stage.getRelativePointerPosition();
-    if (relPos) setPointerPos(relPos);
+    if (relPos) {
+      setPointerPos(relPos);
+    }
+
+    // Calculate cursor data coordinates if in digitize modes
+    if ((mode === 'DIGITIZE' || mode === 'SINGLE_POINT') && activeWorkspace && relPos) {
+      const { xAxis, yAxes, activeYAxisId } = activeWorkspace;
+      const activeYAxis = yAxes.find(y => y.id === activeYAxisId);
+
+      if (activeYAxis) {
+        const coords = pixelToData(relPos.x, relPos.y, xAxis, activeYAxis.calibration);
+        setCursorDataCoords(coords);
+      } else {
+        setCursorDataCoords(null);
+      }
+    } else {
+      if (cursorDataCoords) setCursorDataCoords(null);
+    }
 
     // Box Selection Logic
     if (mode === 'SELECT' && isSelectingRef.current && selectionStartRef.current && relPos) {
@@ -352,7 +371,7 @@ export const DigitizerCanvas = forwardRef<DigitizerHandle, DigitizerCanvasProps>
       addPoint(ptr.x, ptr.y);
     } else if (mode === 'SINGLE_POINT') {
       addSinglePoint(ptr.x, ptr.y);
-    } else if (mode === 'TRACE') {
+    } else if (mode === 'TRACE' || mode === 'TRACE_ADVANCED') {
       if (!image) return;
 
       // Create temporary canvas for pixel reading
@@ -370,66 +389,131 @@ export const DigitizerCanvas = forwardRef<DigitizerHandle, DigitizerCanvasProps>
       targetColor.g = pData[1];
       targetColor.b = pData[2];
 
-      const tracedPoints = traceLine(ctx, ptr.x, ptr.y, targetColor, 60);
+      let tracedPoints: { x: number; y: number }[] = [];
+
+      if (mode === 'TRACE_ADVANCED') {
+        // Use new path tracer
+        tracedPoints = traceLinePath(ctx, ptr.x, ptr.y, targetColor, 60);
+      } else {
+        // Use legacy flood fill
+        tracedPoints = traceLine(ctx, ptr.x, ptr.y, targetColor, 60);
+      }
 
       if (tracedPoints.length === 0) return;
 
       // Ask user for number of points
-      const countStr = prompt('How many points do you want to add?', '20');
-      if (!countStr) return;
-      const desiredCount = parseInt(countStr, 10);
-      if (isNaN(desiredCount) || desiredCount < 2) return;
+      useStore.getState().openModal({
+        type: 'prompt',
+        message: 'How many points do you want to add?',
+        defaultValue: '20',
+        onConfirm: (countStr) => {
+          if (!countStr) return;
+          const desiredCount = parseInt(countStr, 10);
+          if (isNaN(desiredCount) || desiredCount < 2) return;
 
-      // 1. Sort by X
-      tracedPoints.sort((a, b) => a.x - b.x);
+          const resultPoints: { px: number; py: number }[] = [];
 
-      // 2. Thin points: Bucket by X (round to nearest pixel) and average Y
-      const buckets = new Map<number, number[]>();
-      for (const p of tracedPoints) {
-        const rx = Math.round(p.x);
-        if (!buckets.has(rx)) buckets.set(rx, []);
-        buckets.get(rx)!.push(p.y);
-      }
+          if (mode === 'TRACE_ADVANCED') {
+            // Arc-length based downsampling
+            if (tracedPoints.length <= desiredCount) {
+              tracedPoints.forEach(p => resultPoints.push({ px: p.x, py: p.y }));
+            } else {
+              // 1. Calculate cumulative lengths
+              const cumLengths: number[] = [0];
+              let totalLength = 0;
+              for (let i = 1; i < tracedPoints.length; i++) {
+                const p1 = tracedPoints[i - 1];
+                const p2 = tracedPoints[i];
+                const dist = Math.sqrt(Math.pow(p2.x - p1.x, 2) + Math.pow(p2.y - p1.y, 2));
+                totalLength += dist;
+                cumLengths.push(totalLength);
+              }
 
-      const uniquePoints: { x: number; y: number }[] = [];
-      const sortedXs = Array.from(buckets.keys()).sort((a, b) => a - b);
+              // 2. Sample at equal intervals
+              const step = totalLength / (desiredCount - 1);
 
-      for (const x of sortedXs) {
-        const ys = buckets.get(x)!;
-        const avgY = ys.reduce((sum, y) => sum + y, 0) / ys.length;
-        uniquePoints.push({ x, y: avgY });
-      }
+              // Always add first point
+              resultPoints.push({ px: tracedPoints[0].x, py: tracedPoints[0].y });
 
-      // 3. Select points
-      const resultPoints: { px: number; py: number }[] = [];
+              let currentTarget = step;
+              let lastIdx = 0;
 
-      if (uniquePoints.length <= desiredCount) {
-        // Not enough points to downsample extensively, just take what we have
-        uniquePoints.forEach(p => resultPoints.push({ px: p.x, py: p.y }));
-      } else {
-        // Always include start and end
-        resultPoints.push({ px: uniquePoints[0].x, py: uniquePoints[0].y });
+              for (let i = 1; i < desiredCount - 1; i++) {
+                // Find point closest to currentTarget
+                let closestIdx = lastIdx;
+                let minDiff = Infinity;
 
-        const minX = uniquePoints[0].x;
-        const maxX = uniquePoints[uniquePoints.length - 1].x;
-        const totalRange = maxX - minX;
+                for (let j = lastIdx; j < cumLengths.length; j++) {
+                  const diff = Math.abs(cumLengths[j] - currentTarget);
+                  if (diff < minDiff) {
+                    minDiff = diff;
+                    closestIdx = j;
+                  } else {
+                    break;
+                  }
+                }
 
-        // We need desiredCount - 2 intermediate points
-        const step = totalRange / (desiredCount - 1);
+                const p = tracedPoints[closestIdx];
+                resultPoints.push({ px: p.x, py: p.y });
 
-        for (let i = 1; i < desiredCount - 1; i++) {
-          const targetX = minX + (step * i);
-          // Find closest point in uniquePoints to targetX
-          const closest = uniquePoints.reduce((prev, curr) => {
-            return (Math.abs(curr.x - targetX) < Math.abs(prev.x - targetX) ? curr : prev);
-          });
-          resultPoints.push({ px: closest.x, py: closest.y });
+                lastIdx = closestIdx;
+                currentTarget += step;
+              }
+
+              // Always add last point
+              const lastP = tracedPoints[tracedPoints.length - 1];
+              resultPoints.push({ px: lastP.x, py: lastP.y });
+            }
+
+          } else {
+            // Standard X-Sort Logic
+            // 1. Sort by X
+            tracedPoints.sort((a, b) => a.x - b.x);
+
+            // 2. Thin points: Bucket by X (round to nearest pixel) and average Y
+            const buckets = new Map<number, number[]>();
+            for (const p of tracedPoints) {
+              const rx = Math.round(p.x);
+              if (!buckets.has(rx)) buckets.set(rx, []);
+              buckets.get(rx)!.push(p.y);
+            }
+
+            const uniquePoints: { x: number; y: number }[] = [];
+            const sortedXs = Array.from(buckets.keys()).sort((a, b) => a - b);
+
+            for (const x of sortedXs) {
+              const ys = buckets.get(x)!;
+              const avgY = ys.reduce((sum, y) => sum + y, 0) / ys.length;
+              uniquePoints.push({ x, y: avgY });
+            }
+
+            // 3. Select points
+            if (uniquePoints.length <= desiredCount) {
+              uniquePoints.forEach(p => resultPoints.push({ px: p.x, py: p.y }));
+            } else {
+              resultPoints.push({ px: uniquePoints[0].x, py: uniquePoints[0].y });
+
+              const minX = uniquePoints[0].x;
+              const maxX = uniquePoints[uniquePoints.length - 1].x;
+              const totalRange = maxX - minX;
+
+              const step = totalRange / (desiredCount - 1);
+
+              for (let i = 1; i < desiredCount - 1; i++) {
+                const targetX = minX + (step * i);
+                const closest = uniquePoints.reduce((prev, curr) => {
+                  return (Math.abs(curr.x - targetX) < Math.abs(prev.x - targetX) ? curr : prev);
+                });
+                resultPoints.push({ px: closest.x, py: closest.y });
+              }
+
+              resultPoints.push({ px: uniquePoints[uniquePoints.length - 1].x, py: uniquePoints[uniquePoints.length - 1].y });
+            }
+          }
+
+          useStore.getState().addPoints(resultPoints);
         }
-
-        resultPoints.push({ px: uniquePoints[uniquePoints.length - 1].x, py: uniquePoints[uniquePoints.length - 1].y });
-      }
-
-      useStore.getState().addPoints(resultPoints);
+      });
 
     } else if (mode === 'CALIBRATE_X') {
       const target = snapPoint || ptr;
@@ -552,7 +636,9 @@ export const DigitizerCanvas = forwardRef<DigitizerHandle, DigitizerCanvasProps>
             ? 'Selection Mode: Drag to select, click to toggle. Del to delete, Arrows to move.'
             : (mode === 'TRACE'
               ? 'Wand Mode: Click a line to auto-trace'
-              : `Click point ${calibStep} for ${mode === 'CALIBRATE_X' ? 'X' : (activeYAxisDef ? activeYAxisDef.name : 'Y Axis')}`)
+              : (mode === 'TRACE_ADVANCED'
+                ? 'Smart Wand: Click complex lines (dashed, overlaps) to trace'
+                : `Click point ${calibStep} for ${mode === 'CALIBRATE_X' ? 'X' : (activeYAxisDef ? activeYAxisDef.name : 'Y Axis')}`))
           }
         </div>
       )}
@@ -598,7 +684,23 @@ export const DigitizerCanvas = forwardRef<DigitizerHandle, DigitizerCanvasProps>
         onMouseDown={handleStageMouseDown}
         onMouseUp={handleStageMouseUp}
       >
-        <Layer>{image && <KonvaImage name="source-image" image={image} />}</Layer>
+        <Layer>
+          {image && (
+            <KonvaImage
+              name="source-image"
+              image={image}
+              opacity={0}
+              ref={(node) => {
+                if (node) {
+                  node.to({
+                    opacity: 1,
+                    duration: 0.5,
+                  });
+                }
+              }}
+            />
+          )}
+        </Layer>
 
         {/* Calibration Layer */}
         <Layer>
@@ -691,6 +793,30 @@ export const DigitizerCanvas = forwardRef<DigitizerHandle, DigitizerCanvasProps>
               xAxis={xAxis}
               yAxes={yAxes}
             />
+          )}
+
+          {/* Cursor Coordinate Label */}
+          {(mode === 'DIGITIZE' || mode === 'SINGLE_POINT') && cursorDataCoords && pointerPos && (
+            <Label
+              x={pointerPos.x + 15}
+              y={pointerPos.y + 15}
+              listening={false}
+            >
+              <Tag
+                fill="rgba(0, 0, 0, 0.75)"
+                cornerRadius={4}
+                pointerDirection="left"
+                pointerWidth={6}
+                pointerHeight={6}
+                lineJoin="round"
+              />
+              <Text
+                text={`(${cursorDataCoords.x.toFixed(4)}, ${cursorDataCoords.y.toFixed(4)})`}
+                fontSize={12 / currentScale}
+                fill="white"
+                padding={6}
+              />
+            </Label>
           )}
 
           {/* Y Axes */}

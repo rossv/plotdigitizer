@@ -6,6 +6,20 @@ import { fitLinear, fitPolynomial, fitExponential } from './utils/curveFit';
 
 // --- Types ---
 
+export type ModalType = 'alert' | 'confirm' | 'prompt';
+
+export interface ModalState {
+  isOpen: boolean;
+  type: ModalType;
+  title?: string;
+  message: string;
+  defaultValue?: string;
+  confirmLabel?: string;
+  cancelLabel?: string;
+  onConfirm?: (value?: string) => void;
+  onCancel?: () => void;
+}
+
 interface Workspace {
   id: string; // Unique ID for the workspace
   name: string; // Tab Name
@@ -39,6 +53,7 @@ interface StoreState {
   theme: 'light' | 'dark';
   workspaces: Workspace[];
   activeWorkspaceId: string;
+  modal: ModalState;
 
   // Global Actions
   toggleTheme: () => void;
@@ -47,6 +62,9 @@ interface StoreState {
   setActiveWorkspace: (id: string) => void;
   updateWorkspaceName: (id: string, name: string) => void;
   loadProject: (projectData: any) => void; // Handles complex loading
+
+  openModal: (params: Omit<ModalState, 'isOpen'>) => void;
+  closeModal: () => void;
 
   // Workspace Actions (operate on active workspace)
   setImageUrl: (url: string | null) => void;
@@ -225,6 +243,11 @@ export const useStore = create<StoreState>((set) => ({
   theme: (localStorage.getItem('theme') as 'light' | 'dark') || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'),
   workspaces: [createInitialWorkspace('Workspace 1')],
   activeWorkspaceId: '', // Set in init below? No, easy to set default.
+  modal: {
+    isOpen: false,
+    type: 'alert',
+    message: '',
+  },
 
   // Set initial active ID after creation
   // logic to ensure ID matches the first workspace
@@ -305,6 +328,9 @@ export const useStore = create<StoreState>((set) => ({
     };
   }),
 
+  openModal: (params) => set({ modal: { ...params, isOpen: true } }),
+  closeModal: () => set({ modal: { isOpen: false, type: 'alert', message: '' } }),
+
   // --- Workspace Actions ---
 
   setImageUrl: (url) => set(state => updateActiveWorkspace(state, () => ({ imageUrl: url }))),
@@ -322,7 +348,7 @@ export const useStore = create<StoreState>((set) => ({
       if (p.step === 1) newAxis.p1 = { px: p.px, py: p.py, val };
       if (p.step === 2) newAxis.p2 = { px: p.px, py: p.py, val };
 
-      if (newAxis.p1 && newAxis.p2) {
+      if (p.step === 2 && newAxis.p1 && newAxis.p2) {
         try {
           const { slope, intercept } = calculateCalibration(
             newAxis.p1.px, newAxis.p1.val,
@@ -345,7 +371,7 @@ export const useStore = create<StoreState>((set) => ({
         if (p.step === 1) newCalibration.p1 = { px: p.px, py: p.py, val };
         if (p.step === 2) newCalibration.p2 = { px: p.px, py: p.py, val };
 
-        if (newCalibration.p1 && newCalibration.p2) {
+        if (p.step === 2 && newCalibration.p1 && newCalibration.p2) {
           try {
             const { slope, intercept } = calculateCalibration(
               newCalibration.p1.py, newCalibration.p1.val,
@@ -362,7 +388,7 @@ export const useStore = create<StoreState>((set) => ({
       });
 
       const activeAxis = updatedYAxes.find(a => a.id === ws.activeYAxisId);
-      const isComplete = activeAxis?.calibration.p1 && activeAxis?.calibration.p2;
+      const isComplete = p.step === 2 && activeAxis?.calibration.p1 && activeAxis?.calibration.p2;
 
       return {
         yAxes: updatedYAxes,

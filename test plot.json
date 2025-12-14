@@ -1,0 +1,75 @@
+{
+  "version": 2,
+  "createdAt": "2025-12-13T18:07:26.372Z",
+  "workspaces": [
+    {
+      "id": "30115fdb-b133-43f2-a50f-21c6f6f3e24a",
+      "name": "Workspace 1",
+      "imageUrl": "data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iODAwIiBoZWlnaHQ9IjYwMCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4NCiAgPCEtLSBCYWNrZ3JvdW5kIC0tPg0KICA8cmVjdCB3aWR0aD0iMTAwJSIgaGVpZ2h0PSIxMDAlIiBmaWxsPSJ3aGl0ZSIvPg0KICANCiAgPCEtLSBHcmlkIC0tPg0KICA8ZGVmcz4NCiAgICA8cGF0dGVybiBpZD0iZ3JpZCIgd2lkdGg9IjgwIiBoZWlnaHQ9IjYwIiBwYXR0ZXJuVW5pdHM9InVzZXJTcGFjZU9uVXNlIj4NCiAgICAgIDxwYXRoIGQ9Ik0gODAgMCBMIDAgMCAwIDYwIiBmaWxsPSJub25lIiBzdHJva2U9IiNmMGYwZjAiIHN0cm9rZS13aWR0aD0iMSIvPg0KICAgIDwvcGF0dGVybj4NCiAgPC9kZWZzPg0KICA8cmVjdCB3aWR0aD0iMTAwJSIgaGVpZ2h0PSIxMDAlIiBmaWxsPSJ1cmwoI2dyaWQpIiAvPg0KDQogIDwhLS0gQXhlcyAtLT4NCiAgPGxpbmUgeDE9IjUwIiB5MT0iNTUwIiB4Mj0iNzUwIiB5Mj0iNTUwIiBzdHJva2U9ImJsYWNrIiBzdHJva2Utd2lkdGg9IjIiIC8+DQogIDxsaW5lIHgxPSI1MCIgeTE9IjU1MCIgeDI9IjUwIiB5Mj0iNTAiIHN0cm9rZT0iYmxhY2siIHN0cm9rZS13aWR0aD0iMiIgLz4NCg0KICA8IS0tIFRpY2tzIFggLS0+DQogIDxsaW5lIHgxPSI1MCIgeTE9IjU1MCIgeDI9IjUwIiB5Mj0iNTYwIiBzdHJva2U9ImJsYWNrIiAvPg0KICA8dGV4dCB4PSI0NSIgeT0iNTc1IiBmb250LWZhbWlseT0iQXJpYWwiIGZvbnQtc2l6ZT0iMTQiPjA8L3RleHQ+DQogIA0KICA8bGluZSB4MT0iNzUwIiB5MT0iNTUwIiB4Mj0iNzUwIiB5Mj0iNTYwIiBzdHJva2U9ImJsYWNrIiAvPg0KICA8dGV4dCB4PSI3NDAiIHk9IjU3NSIgZm9udC1mYW1pbHk9IkFyaWFsIiBmb250LXNpemU9IjE0Ij4xMDA8L3RleHQ+DQoNCiAgPCEtLSBUaWNrcyBZIC0tPg0KICA8bGluZSB4MT0iNTAiIHkxPSI1NTAiIHgyPSI0MCIgeTI9IjU1MCIgc3Ryb2tlPSJibGFjayIgLz4NCiAgPHRleHQgeD0iMjAiIHk9IjU1NSIgZm9udC1mYW1pbHk9IkFyaWFsIiBmb250LXNpemU9IjE0Ij4wPC90ZXh0Pg0KDQogIDxsaW5lIHgxPSI1MCIgeTE9IjUwIiB4Mj0iNDAiIHkyPSI1MCIgc3Ryb2tlPSJibGFjayIgLz4NCiAgPHRleHQgeD0iMTUiIHk9IjU1IiBmb250LWZhbWlseT0iQXJpYWwiIGZvbnQtc2l6ZT0iMTQiPjUwPC90ZXh0Pg0KDQogIDwhLS0gUGxvdCBMaW5lIC0tPg0KICA8cGF0aCBkPSJNIDUwIDU1MCBRIDQwMCA1MDAgNzUwIDUwIiBzdHJva2U9ImJsdWUiIHN0cm9rZS13aWR0aD0iMyIgZmlsbD0ibm9uZSIgLz4NCjwvc3ZnPg0K",
+      "mode": "IDLE",
+      "xAxis": {
+        "p1": {
+          "px": 49,
+          "py": 551,
+          "val": 0
+        },
+        "p2": {
+          "px": 751,
+          "py": 552,
+          "val": 100
+        },
+        "isLog": false,
+        "slope": 0.14245014245014245,
+        "intercept": -6.98005698005698
+      },
+      "xAxisName": "X Axis",
+      "yAxes": [
+        {
+          "id": "y-axis-1",
+          "name": "Y Axis 1",
+          "color": "#ef4444",
+          "calibration": {
+            "p1": {
+              "px": 49,
+              "py": 551,
+              "val": 0
+            },
+            "p2": {
+              "px": 49,
+              "py": 50,
+              "val": 50
+            },
+            "isLog": false,
+            "slope": -0.0998003992015968,
+            "intercept": 54.99001996007984
+          }
+        }
+      ],
+      "activeYAxisId": "y-axis-1",
+      "series": [
+        {
+          "id": "series-1",
+          "name": "Series 1",
+          "color": "#ef4444",
+          "points": [],
+          "yAxisId": "y-axis-1",
+          "fitConfig": {
+            "enabled": false,
+            "type": "linear",
+            "interceptMode": "auto"
+          },
+          "showLabels": false,
+          "showPointCoordinates": false
+        }
+      ],
+      "activeSeriesId": "series-1",
+      "singlePoints": [],
+      "pendingCalibrationPoint": null,
+      "history": [],
+      "historyIndex": -1,
+      "selectedPointIds": []
+    }
+  ],
+  "activeWorkspaceId": "30115fdb-b133-43f2-a50f-21c6f6f3e24a",
+  "theme": "dark"
+}
