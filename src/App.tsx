@@ -66,6 +66,7 @@ export default function App() {
     toggleSeriesPointCoordinates,
     startCalibration,
     resampleActiveSeries,
+    autoDetectAxes,
   } = useStore();
 
   const activeWorkspace = workspaces.find(w => w.id === activeWorkspaceId);
@@ -392,7 +393,16 @@ export default function App() {
           <div className="p-4 bg-white dark:bg-slate-900 rounded-2xl shadow-md border border-slate-200 dark:border-slate-800 space-y-4 transition-all hover:shadow-lg animate-slide-up" style={{ animationDelay: '0.2s' }}>
             <div className="flex items-center justify-between">
               <h3 className="font-semibold text-slate-800 dark:text-slate-200 text-sm">Calibration</h3>
-              <span className="text-[10px] uppercase tracking-wide text-slate-500 font-bold bg-slate-100 dark:bg-slate-800 px-2 py-0.5 rounded-full">{mode !== 'IDLE' ? mode : 'Ready'}</span>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => autoDetectAxes()}
+                  className="text-[10px] font-bold text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/20 px-2 py-0.5 rounded border border-blue-200 dark:border-blue-800 hover:bg-blue-100 dark:hover:bg-blue-900/40 transition-colors"
+                  title="Auto-detect axes from image"
+                >
+                  Auto
+                </button>
+                <span className="text-[10px] uppercase tracking-wide text-slate-500 font-bold bg-slate-100 dark:bg-slate-800 px-2 py-0.5 rounded-full">{mode !== 'IDLE' ? mode : 'Ready'}</span>
+              </div>
             </div>
 
             {/* X-Axis Section */}

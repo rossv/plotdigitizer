@@ -3,6 +3,7 @@ import { v4 as uuidv4 } from 'uuid';
 import type { AppMode, AxisCalibration, Point, Series, YAxisDefinition, CurveFitConfig, SnapConfig } from './types';
 import { calculateCalibration, pixelToData, dataToPixel } from './utils/math';
 import { fitLinear, fitPolynomial, fitExponential, findBestFit, generatePointsFromPredict } from './utils/curveFit';
+import { detectAxes } from './utils/autoDetect';
 
 // --- Types ---
 
@@ -122,6 +123,7 @@ interface StoreState {
   snapSeriesPoints: (seriesId: string, config: SnapConfig) => void;
   toggleSeriesPointCoordinates: (seriesId: string) => void;
   resampleActiveSeries: (count: number) => void;
+  autoDetectAxes: () => Promise<void>;
 }
 
 // --- Helpers ---
@@ -254,7 +256,7 @@ const updateActiveWorkspace = (state: StoreState, updater: (ws: Workspace) => Pa
   return { workspaces: newWorkspaces };
 };
 
-export const useStore = create<StoreState>((set) => ({
+export const useStore = create<StoreState>((set, get) => ({
   // Global State
   theme: (localStorage.getItem('theme') as 'light' | 'dark') || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'),
   workspaces: [createInitialWorkspace('Workspace 1')],
@@ -804,6 +806,54 @@ export const useStore = create<StoreState>((set) => ({
       historyIndex: newHistory.length - 1
     };
   })),
+
+  autoDetectAxes: async () => {
+    const state = get();
+    const ws = state.workspaces.find(w => w.id === state.activeWorkspaceId);
+    if (!ws || !ws.imageUrl) return;
+
+    try {
+      state.openModal({ type: 'alert', message: 'Detecting axes... please wait.' });
+
+      const result = await detectAxes(ws.imageUrl);
+
+      state.closeModal();
+
+      set(state => updateActiveWorkspace(state, (ws) => {
+        const xP1 = { px: result.xAxis.p1.x, py: result.xAxis.p1.y, val: NaN };
+        const xP2 = { px: result.xAxis.p2.x, py: result.xAxis.p2.y, val: NaN };
+
+        const yP1 = { px: result.yAxis.p1.x, py: result.yAxis.p1.y, val: NaN };
+        const yP2 = { px: result.yAxis.p2.x, py: result.yAxis.p2.y, val: NaN };
+
+        // Update X Axis
+        const newXAxis = { ...ws.xAxis, p1: xP1, p2: xP2, slope: null, intercept: null };
+
+        // Update Active Y Axis
+        const newYAxes = ws.yAxes.map(y => {
+          if (y.id === ws.activeYAxisId) {
+            return { ...y, calibration: { ...y.calibration, p1: yP1, p2: yP2, slope: null, intercept: null } };
+          }
+          return y;
+        });
+
+        return {
+          xAxis: newXAxis,
+          yAxes: newYAxes,
+          mode: 'IDLE'
+        };
+      }));
+
+      // Notify success
+      setTimeout(() => {
+        get().openModal({ type: 'alert', message: 'Axes detected! Click on the calibration points to set their values.' });
+      }, 100);
+
+    } catch (e) {
+      console.error(e);
+      state.openModal({ type: 'alert', message: 'Failed to detect axes. Please calibrate manually.' });
+    }
+  },
 
   undo: () => set(state => updateActiveWorkspace(state, (ws) => {
     if (ws.historyIndex < 0) return {};

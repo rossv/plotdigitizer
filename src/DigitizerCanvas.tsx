@@ -23,7 +23,7 @@ interface CalibrationHandleProps {
 }
 
 const CalibrationHandle: React.FC<CalibrationHandleProps> = ({ x, y, label, color, axisType, axisId, pointIndex, scale, xAxis, yAxes }) => {
-  const { updateCalibrationPointPosition } = useStore();
+  const { updateCalibrationPointPosition, setPendingCalibrationPoint } = useStore();
   const size = 12 / scale; // Slightly larger for better visibility
   const strokeWidth = 2 / scale;
 
@@ -86,6 +86,24 @@ const CalibrationHandle: React.FC<CalibrationHandleProps> = ({ x, y, label, colo
       }}
       onDragEnd={(e) => {
         updateCalibrationPointPosition(axisType, axisId, pointIndex, e.target.x(), e.target.y());
+      }}
+      onClick={(e) => {
+        // Prevent stage click
+        e.cancelBubble = true;
+        setPendingCalibrationPoint({
+          axis: axisType,
+          step: pointIndex,
+          px: x,
+          py: y
+        });
+      }}
+      onMouseEnter={(e) => {
+        const container = e.target.getStage()?.container();
+        if (container) container.style.cursor = 'pointer';
+      }}
+      onMouseLeave={(e) => {
+        const container = e.target.getStage()?.container();
+        if (container) container.style.cursor = 'default';
       }}
     >
       <Rect
@@ -251,7 +269,48 @@ export const DigitizerCanvas = forwardRef<DigitizerHandle, DigitizerCanvasProps>
     setCalibStep(1);
   }, [mode]);
 
-  // ... (handleStageMouseMove is fine) ...
+  // Magnifier State
+  const [magnifierZoom, setMagnifierZoom] = useState(2);
+  const magnifierDivRef = useRef<HTMLDivElement>(null);
+
+  // Keyboard Zoom Controls
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === ']') {
+        setMagnifierZoom(z => Math.min(z + 0.5, 10)); // Max 10x
+      } else if (e.key === '[') {
+        setMagnifierZoom(z => Math.max(z - 0.5, 1)); // Min 1x
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, []);
+
+  // Determine if Magnifier should be in Loupe Mode
+  const isLoupeActive = React.useMemo(() => {
+    return ['DIGITIZE', 'SINGLE_POINT', 'CALIBRATE_X', 'CALIBRATE_Y', 'TRACE', 'TRACE_ADVANCED'].includes(mode);
+  }, [mode]);
+
+  // Handle Docking (Fly away)
+  useEffect(() => {
+    const div = magnifierDivRef.current;
+    if (!div) return;
+
+    if (!isLoupeActive) {
+      // Dock to Top-Right
+      // We use a timeout to allow the 'transition' class to apply if satisfied, 
+      // but actually we can just set styles directly.
+      div.style.transition = 'top 0.6s cubic-bezier(0.34, 1.56, 0.64, 1), left 0.6s cubic-bezier(0.34, 1.56, 0.64, 1), transform 0.6s cubic-bezier(0.34, 1.56, 0.64, 1)';
+      div.style.left = '';
+      div.style.right = '16px';
+      div.style.top = '16px';
+      div.style.transform = 'none';
+    } else {
+      // Prepare for Loupe Mode (remove transition for instant tracking)
+      div.style.transition = 'none';
+      div.style.right = 'auto'; // Release right constraint
+    }
+  }, [isLoupeActive]);
 
 
   const handleStageMouseMove = (e: KonvaEventObject<MouseEvent>) => {
@@ -353,30 +412,34 @@ export const DigitizerCanvas = forwardRef<DigitizerHandle, DigitizerCanvasProps>
       if (snapPoint) setSnapPoint(null);
     }
 
+    // Update Magnifier Content & Position
     if (magnifierRef.current && stageRef.current) {
       const mainCanvas = stageRef.current.content.querySelector('canvas');
       if (mainCanvas) {
         const ctx = magnifierRef.current.getContext('2d');
         if (ctx) {
-          // Settings
           const size = 150;
-          const zoom = 2; // 2x magnification
+          const zoom = magnifierZoom;
           const srcSize = size / zoom;
 
           // Clear
           ctx.fillStyle = '#f0f0f0';
           ctx.fillRect(0, 0, size, size);
 
-          // Konva handles pixel ratio. The <canvas> width/height attributes might be larger than style/stage size.
           const pixelRatio = window.devicePixelRatio || 1;
 
-          // Source coordinates on the actual canvas element
-          // NOTE: If snapping, we stick the magnifier to the snap point?
-          // Actually, it's better to stick to the mouse so user sees what is there.
-          // But maybe we can verify snapping visually on the main canvas.
+          // Source coordinates
+          // If snapping, use snap point? 
+          // It feels better to magnify exactly where the mouse is for exploring, 
+          // even if the logic snaps underneath.
+          // However, if we are snapping, seeing the snap target in the center is helpful.
+          // Let's stick to mouse pointer for visual consistency of "magnifying glass".
 
-          const sx = pointer.x * pixelRatio - (srcSize * pixelRatio) / 2;
-          const sy = pointer.y * pixelRatio - (srcSize * pixelRatio) / 2;
+          const targetX = pointer.x;
+          const targetY = pointer.y;
+
+          const sx = targetX * pixelRatio - (srcSize * pixelRatio) / 2;
+          const sy = targetY * pixelRatio - (srcSize * pixelRatio) / 2;
           const sWidth = srcSize * pixelRatio;
           const sHeight = srcSize * pixelRatio;
 
@@ -386,15 +449,63 @@ export const DigitizerCanvas = forwardRef<DigitizerHandle, DigitizerCanvasProps>
             0, 0, size, size
           );
 
-          // Draw Reticle (Crosshair)
-          ctx.strokeStyle = 'rgba(255, 0, 0, 0.5)';
+          // Draw Reticle
+          ctx.strokeStyle = 'rgba(239, 68, 68, 0.7)'; // Red-500
           ctx.lineWidth = 1;
           ctx.beginPath();
+          // Full crosshair
           ctx.moveTo(size / 2, 0);
           ctx.lineTo(size / 2, size);
           ctx.moveTo(0, size / 2);
           ctx.lineTo(size, size / 2);
           ctx.stroke();
+
+          // Little center gap or circle?
+          // Let's add a small circle in center for precision
+          ctx.beginPath();
+          ctx.arc(size / 2, size / 2, 3, 0, Math.PI * 2);
+          ctx.stroke();
+        }
+      }
+
+      // Update Position (Loupe Mode)
+      if (isLoupeActive && magnifierDivRef.current && containerRef.current) {
+
+        // Mouse relative to container (which is what pointer is mostly active on, 
+        // but pointer is relative to Stage which fills container)
+        // Actually, stage.getPointerPosition() is relative to the stage top-left (0,0).
+        // If stage is panned, we need client coordinates for the fixed/absolute div.
+
+        // Simpler: use the raw event client coordinates if available, 
+        // but Konva gives us the pointer position relative to standard stage container.
+
+        // Actually, we want clientX/Y relative to the container.
+        const pointerPos = stage.getPointerPosition();
+        if (pointerPos) {
+          // This pointerPos is relative to the top-left of the Stage container (div).
+          // So we can use it for absolute positioning the magnifier div within the same container.
+
+          const OFFSET = 20;
+          const magSize = 150;
+
+          let left = pointerPos.x + OFFSET;
+          let top = pointerPos.y + OFFSET;
+
+          // Boundary Check
+          const contW = containerRef.current.clientWidth;
+          const contH = containerRef.current.clientHeight;
+
+          if (left + magSize > contW) {
+            left = pointerPos.x - magSize - OFFSET;
+          }
+          if (top + magSize > contH) {
+            top = pointerPos.y - magSize - OFFSET;
+          }
+
+          // Apply
+          magnifierDivRef.current.style.left = `${left}px`;
+          magnifierDivRef.current.style.top = `${top}px`;
+          magnifierDivRef.current.style.right = 'auto'; // ensure right is unset
         }
       }
     }
@@ -417,22 +528,40 @@ export const DigitizerCanvas = forwardRef<DigitizerHandle, DigitizerCanvasProps>
 
         const resultPoints: { px: number; py: number }[] = [];
 
+        // Pre-process: Simplify the traced path to remove pixel noise
+        // This ensures the arc-length calculation isn't inflated by zig-zags
+        const simplifiedPoints: { x: number; y: number }[] = [];
+        if (tracedPoints.length > 0) {
+          simplifiedPoints.push(tracedPoints[0]);
+          for (let i = 1; i < tracedPoints.length; i++) {
+            const last = simplifiedPoints[simplifiedPoints.length - 1];
+            const curr = tracedPoints[i];
+            const distSq = (curr.x - last.x) ** 2 + (curr.y - last.y) ** 2;
+            // Keep points only if they are at least 2 pixels away from the last kept point,
+            // or if it's the last point. 
+            // 2 pixels squared is 4.
+            if (distSq > 4 || i === tracedPoints.length - 1) {
+              simplifiedPoints.push(curr);
+            }
+          }
+        }
+
         // Strict resampling to desired count (Interpolation)
-        if (tracedPoints.length < 2 || desiredCount < 2) {
+        if (simplifiedPoints.length < 2 || desiredCount < 2) {
           tracedPoints.forEach(p => resultPoints.push({ px: p.x, py: p.y }));
         } else {
           const cumLengths: number[] = [0];
           let totalLength = 0;
-          for (let i = 1; i < tracedPoints.length; i++) {
-            const dx = tracedPoints[i].x - tracedPoints[i - 1].x;
-            const dy = tracedPoints[i].y - tracedPoints[i - 1].y;
+          for (let i = 1; i < simplifiedPoints.length; i++) {
+            const dx = simplifiedPoints[i].x - simplifiedPoints[i - 1].x;
+            const dy = simplifiedPoints[i].y - simplifiedPoints[i - 1].y;
             const dist = Math.sqrt(dx * dx + dy * dy);
             totalLength += dist;
             cumLengths.push(totalLength);
           }
 
           const step = totalLength / (desiredCount - 1);
-          resultPoints.push({ px: tracedPoints[0].x, py: tracedPoints[0].y });
+          resultPoints.push({ px: simplifiedPoints[0].x, py: simplifiedPoints[0].y });
 
           let currentTarget = step;
           let idx = 0;
@@ -443,8 +572,8 @@ export const DigitizerCanvas = forwardRef<DigitizerHandle, DigitizerCanvasProps>
               idx++;
             }
             // Interpolate
-            const p0 = tracedPoints[idx];
-            const p1 = tracedPoints[idx + 1];
+            const p0 = simplifiedPoints[idx];
+            const p1 = simplifiedPoints[idx + 1];
             const segStart = cumLengths[idx];
             const segEnd = cumLengths[idx + 1];
             const segLen = segEnd - segStart;
@@ -458,7 +587,7 @@ export const DigitizerCanvas = forwardRef<DigitizerHandle, DigitizerCanvasProps>
             currentTarget += step;
           }
 
-          const lastP = tracedPoints[tracedPoints.length - 1];
+          const lastP = simplifiedPoints[simplifiedPoints.length - 1];
           resultPoints.push({ px: lastP.x, py: lastP.y });
         }
 
@@ -511,7 +640,7 @@ export const DigitizerCanvas = forwardRef<DigitizerHandle, DigitizerCanvasProps>
         });
         setWandModalOpen(true);
       } else {
-        const tracedPoints = traceLine(ctx, ptr.x, ptr.y, targetColor, 60);
+        const tracedPoints = traceLine(ctx, ptr.x, ptr.y, targetColor, 100);
         finishTrace(tracedPoints);
       }
     } else if (mode === 'CALIBRATE_X') {
@@ -644,8 +773,20 @@ export const DigitizerCanvas = forwardRef<DigitizerHandle, DigitizerCanvasProps>
       )}
 
       {/* Magnifier Overlay */}
-      <div className="absolute top-4 right-4 w-[150px] h-[150px] bg-white dark:bg-slate-800 border-2 border-slate-300 dark:border-slate-600 shadow-lg z-20 pointer-events-none rounded overflow-hidden">
+      <div
+        ref={magnifierDivRef}
+        className="absolute w-[150px] h-[150px] border-[3px] border-white ring-1 ring-slate-900/10 shadow-2xl z-20 pointer-events-none rounded-full overflow-hidden bg-white dark:bg-slate-800"
+        style={{
+          // Initial styles for docked position
+          top: '16px',
+          right: '16px',
+        }}
+      >
         <canvas ref={magnifierRef} width={150} height={150} />
+        {/* Zoom label */}
+        <div className="absolute bottom-2 right-1/2 translate-x-1/2 bg-black/50 text-white text-[10px] px-1.5 py-0.5 rounded-full backdrop-blur-sm">
+          {magnifierZoom}x
+        </div>
       </div>
 
       <CalibrationInput />
