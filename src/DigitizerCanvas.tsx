@@ -253,8 +253,6 @@ export const DigitizerCanvas = forwardRef<DigitizerHandle, DigitizerCanvasProps>
 
   // ... (handleStageMouseMove is fine) ...
 
-  // Extracted finalization logic
-
 
   const handleStageMouseMove = (e: KonvaEventObject<MouseEvent>) => {
     const stage = e.target.getStage();
@@ -706,7 +704,6 @@ export const DigitizerCanvas = forwardRef<DigitizerHandle, DigitizerCanvasProps>
 
         {/* Calibration Layer */}
         <Layer>
-          {/* Fitted Curves */}
           {/* Fitted Curves */}
           {series.map((ser) => {
             if (!ser.fitConfig.enabled || !ser.fitResult) return null;

@@ -1,7 +1,5 @@
 
-function clamp(v: number, min: number, max: number) {
-  return Math.max(min, Math.min(max, v));
-}
+
 
 export type Point = { x: number; y: number };
 
@@ -174,49 +172,7 @@ function distanceTransform(mask: Uint8Array, w: number, h: number): Float32Array
   return dist;
 }
 
-function removeSmallComponents(mask: Uint8Array, w: number, h: number, minSize: number): Uint8Array {
-  const visited = new Uint8Array(w * h);
-  const out = mask.slice();
-  const stack: number[] = [];
 
-  for (let i = 0; i < w * h; i++) {
-    if (!out[i] || visited[i]) continue;
-
-    let count = 0;
-    stack.push(i);
-    visited[i] = 1;
-    const component: number[] = [i];
-
-    while (stack.length) {
-      const idx = stack.pop()!;
-      count++;
-      const x = idx % w;
-      const y = Math.floor(idx / w);
-
-      // 8-neighbors
-      for (let dy = -1; dy <= 1; dy++) {
-        for (let dx = -1; dx <= 1; dx++) {
-          if (dx === 0 && dy === 0) continue;
-          const nx = x + dx;
-          const ny = y + dy;
-          if (nx >= 0 && nx < w && ny >= 0 && ny < h) {
-            const nidx = ny * w + nx;
-            if (out[nidx] && !visited[nidx]) {
-              visited[nidx] = 1;
-              stack.push(nidx);
-              component.push(nidx);
-            }
-          }
-        }
-      }
-    }
-
-    if (count < minSize) {
-      for (const idx of component) out[idx] = 0;
-    }
-  }
-  return out;
-}
 
 
 // --- 2. Ridge Walking Core ---
@@ -338,7 +294,7 @@ function ridgeWalk(
       if (bestVal < minDT) {
         // Try Gap Jump?
         // Simple cone search
-        let foundGap = false;
+
         const cone = (opts.gapAngle * Math.PI) / 180;
         const baseAngle = Math.atan2(cDir.y, cDir.x);
 
@@ -367,7 +323,7 @@ function ridgeWalk(
           cPos = bestJumpPos;
           cDir = jumpDir; // Reset momentum
           line.push(cPos);
-          foundGap = true;
+          // foundGap = true;
           continue;
         } else {
           break; // Terminate
