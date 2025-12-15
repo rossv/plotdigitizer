@@ -2,7 +2,7 @@ import { create } from 'zustand';
 import { v4 as uuidv4 } from 'uuid';
 import type { AppMode, AxisCalibration, Point, Series, YAxisDefinition, CurveFitConfig, SnapConfig } from './types';
 import { calculateCalibration, pixelToData, dataToPixel } from './utils/math';
-import { fitLinear, fitPolynomial, fitExponential } from './utils/curveFit';
+import { fitLinear, fitPolynomial, fitExponential, findBestFit, generatePointsFromPredict } from './utils/curveFit';
 
 // --- Types ---
 
@@ -85,11 +85,13 @@ interface StoreState {
   setActiveSeries: (id: string) => void;
   setSeriesYAxis: (seriesId: string, axisId: string) => void;
   updateSeriesName: (id: string, name: string) => void;
+  updateSeriesColor: (id: string, color: string) => void;
   clearSeriesPoints: (id: string) => void;
   setSeriesFitConfig: (seriesId: string, config: Partial<CurveFitConfig>) => void;
   toggleSeriesLabels: (seriesId: string) => void;
 
   setPendingCalibrationPoint: (point: { axis: 'X' | 'Y'; step: 1 | 2; px: number; py: number } | null) => void;
+  startCalibration: (axis: 'X' | 'Y', axisId?: string) => void;
   confirmCalibrationPoint: (val: number) => void;
 
   addPoint: (px: number, py: number) => void;
@@ -119,6 +121,7 @@ interface StoreState {
   nudgeSelection: (dx: number, dy: number) => void;
   snapSeriesPoints: (seriesId: string, config: SnapConfig) => void;
   toggleSeriesPointCoordinates: (seriesId: string) => void;
+  resampleActiveSeries: (count: number) => void;
 }
 
 // --- Helpers ---
@@ -130,6 +133,19 @@ const initialAxis: AxisCalibration = {
   slope: null,
   intercept: null,
 };
+
+const SERIES_PALETTE = [
+  '#10b981', // Emerald 500
+  '#f59e0b', // Amber 500
+  '#8b5cf6', // Violet 500
+  '#ec4899', // Pink 500
+  '#06b6d4', // Cyan 500
+  '#84cc16', // Lime 500
+  '#6366f1', // Indigo 500
+];
+
+const getRandomColor = () => `#${Math.floor(Math.random() * 16777215).toString(16).padStart(6, '0')}`;
+
 
 const defaultYAxisId = 'y-axis-1';
 
@@ -207,7 +223,7 @@ const createInitialWorkspace = (name: string): Workspace => ({
     {
       id: 'series-1',
       name: 'Series 1',
-      color: '#ef4444',
+      color: SERIES_PALETTE[0],
       points: [],
       yAxisId: defaultYAxisId,
       fitConfig: { enabled: false, type: 'linear', interceptMode: 'auto' },
@@ -339,6 +355,29 @@ export const useStore = create<StoreState>((set) => ({
 
   setPendingCalibrationPoint: (point) => set(state => updateActiveWorkspace(state, () => ({ pendingCalibrationPoint: point }))),
 
+  startCalibration: (axis, axisId) => set(state => updateActiveWorkspace(state, (ws) => {
+    if (axis === 'X') {
+      return {
+        mode: 'CALIBRATE_X',
+        xAxis: { ...ws.xAxis, p1: null, p2: null, slope: null, intercept: null },
+        pendingCalibrationPoint: null
+      };
+    } else {
+      const updatedYAxes = ws.yAxes.map(y => {
+        if (axisId && y.id !== axisId) return y;
+        // If axisId is provided, reset only that axis. If not (shouldn't happen for Y), reset active? 
+        // Logic in UI calls this with specific ID.
+        return { ...y, calibration: { ...y.calibration, p1: null, p2: null, slope: null, intercept: null } };
+      });
+      return {
+        mode: 'CALIBRATE_Y',
+        yAxes: updatedYAxes,
+        activeYAxisId: axisId || ws.activeYAxisId,
+        pendingCalibrationPoint: null
+      };
+    }
+  })),
+
   confirmCalibrationPoint: (val) => set(state => updateActiveWorkspace(state, (ws) => {
     const p = ws.pendingCalibrationPoint;
     if (!p) return {};
@@ -357,7 +396,28 @@ export const useStore = create<StoreState>((set) => ({
           );
           newAxis.slope = slope;
           newAxis.intercept = intercept;
-          return { xAxis: newAxis, pendingCalibrationPoint: null, mode: 'IDLE' };
+
+          // Recalculate all points based on new X calibration
+          const updatedSeries = ws.series.map(s => {
+            const yAxis = ws.yAxes.find(y => y.id === s.yAxisId)?.calibration;
+            // We need both axes to be valid to calculate data points. 
+            // If Y is not calibrated yet, we can't fully calculate, but X part is updated.
+            // Actually pixelToData returns null if ANY axis is missing.
+            // But maybe we should try to update X even if Y is missing? 
+            // Existing logic in pixelToData checks all slopes/intercepts.
+            // So if Y is not ready, points dataX/dataY become undefined/outdated? 
+            // Actually pixelToData returns null, so we might lose dataX/Y if Y isn't ready.
+            // But if we are Recalibrating X, Y might be ready.
+
+            // If Y is ready, we recalculate.
+            const updatedPoints = s.points.map(pt => {
+              const coords = pixelToData(pt.x, pt.y, newAxis, yAxis || { ...initialAxis });
+              return coords ? { ...pt, dataX: coords.x, dataY: coords.y } : pt;
+            });
+            return updateSeriesFit({ ...s, points: updatedPoints });
+          });
+
+          return { xAxis: newAxis, pendingCalibrationPoint: null, mode: 'IDLE', series: updatedSeries };
         } catch (e) {
           console.error(e);
         }
@@ -390,10 +450,26 @@ export const useStore = create<StoreState>((set) => ({
       const activeAxis = updatedYAxes.find(a => a.id === ws.activeYAxisId);
       const isComplete = p.step === 2 && activeAxis?.calibration.p1 && activeAxis?.calibration.p2;
 
+      let extraUpdates = {};
+
+      if (isComplete && activeAxis) {
+        // Recalculate points
+        const updatedSeries = ws.series.map(s => {
+          // We need to know which Y axis this series uses.
+          const seriesYAxis = updatedYAxes.find(y => y.id === s.yAxisId)?.calibration;
+          const updatedPoints = s.points.map(pt => {
+            const coords = pixelToData(pt.x, pt.y, ws.xAxis, seriesYAxis || { ...initialAxis });
+            return coords ? { ...pt, dataX: coords.x, dataY: coords.y } : pt;
+          });
+          return updateSeriesFit({ ...s, points: updatedPoints });
+        });
+        extraUpdates = { series: updatedSeries, mode: 'IDLE' };
+      }
+
       return {
         yAxes: updatedYAxes,
         pendingCalibrationPoint: null,
-        ...(isComplete ? { mode: 'IDLE' } : {})
+        ...extraUpdates
       };
     }
   })),
@@ -412,7 +488,7 @@ export const useStore = create<StoreState>((set) => ({
       yAxes: [...ws.yAxes, {
         id,
         name: `Y Axis ${ws.yAxes.length + 1}`,
-        color: `#${Math.floor(Math.random() * 16777215).toString(16).padStart(6, '0')}`,
+        color: getRandomColor(),
         calibration: { ...initialAxis }
       }],
       activeYAxisId: id
@@ -460,7 +536,7 @@ export const useStore = create<StoreState>((set) => ({
         {
           id,
           name: `Series ${ws.series.length + 1}`,
-          color: `#${Math.floor(Math.random() * 16777215).toString(16).padStart(6, '0')}`,
+          color: SERIES_PALETTE[ws.series.length % SERIES_PALETTE.length] || getRandomColor(),
           points: [],
           yAxisId: ws.activeYAxisId || ws.yAxes[0].id,
           fitConfig: { enabled: false, type: 'linear', interceptMode: 'auto' },
@@ -497,6 +573,10 @@ export const useStore = create<StoreState>((set) => ({
     series: ws.series.map(s => s.id === id ? { ...s, name } : s)
   }))),
 
+  updateSeriesColor: (id, color) => set(state => updateActiveWorkspace(state, (ws) => ({
+    series: ws.series.map(s => s.id === id ? { ...s, color } : s)
+  }))),
+
   clearSeriesPoints: (id) => set(state => updateActiveWorkspace(state, (ws) => {
     const updatedSeries = ws.series.map((s) => {
       if (s.id !== id) return s;
@@ -528,6 +608,71 @@ export const useStore = create<StoreState>((set) => ({
   toggleSeriesPointCoordinates: (seriesId) => set(state => updateActiveWorkspace(state, (ws) => ({
     series: ws.series.map((s) => s.id === seriesId ? { ...s, showPointCoordinates: !s.showPointCoordinates } : s),
   }))),
+
+  resampleActiveSeries: (count) => set(state => updateActiveWorkspace(state, (ws) => {
+    const activeSeries = ws.series.find(s => s.id === ws.activeSeriesId);
+    if (!activeSeries || activeSeries.points.length < 2) return {};
+
+    const points = activeSeries.points.filter(p => p.dataX !== undefined && p.dataY !== undefined);
+    if (points.length < 2) return {};
+
+    // 1. Find Best Fit
+    const bestFit = findBestFit(points);
+    if (!bestFit) return {};
+
+    // 2. Generate New Points
+    // Determine Range
+    const xValues = points.map(p => p.dataX!).sort((a, b) => a - b);
+    const minX = xValues[0];
+    const maxX = xValues[xValues.length - 1];
+
+    const newPointsData = generatePointsFromPredict(
+      bestFit.result.predict,
+      minX,
+      maxX,
+      count,
+      activeSeries.id
+    );
+
+    // 3. Convert Data to Pixel
+    // We need the Y axis.
+    const yAxis = ws.yAxes.find(y => y.id === activeSeries.yAxisId)?.calibration;
+    if (!yAxis) return {};
+
+    const newPoints: Point[] = newPointsData.map(p => {
+      const pixel = dataToPixel(p.dataX!, p.dataY!, ws.xAxis, yAxis);
+      return {
+        ...p,
+        x: pixel?.x || 0,
+        y: pixel?.y || 0
+      };
+    });
+
+    // 4. Update Series
+    const updatedSeries = ws.series.map(s => {
+      if (s.id !== activeSeries.id) return s;
+      return updateSeriesFit({
+        ...s,
+        fitConfig: {
+          enabled: true,
+          type: bestFit.config.type,
+          order: bestFit.config.order,
+          interceptMode: 'auto' // Defaulting to auto, maybe could infer?
+        },
+        points: newPoints
+      });
+    });
+
+    // 5. Check/Add History
+    const newHistory = ws.history ? ws.history.slice(0, ws.historyIndex + 1) : [];
+    newHistory.push({ series: updatedSeries, yAxes: ws.yAxes });
+
+    return {
+      series: updatedSeries,
+      history: newHistory,
+      historyIndex: newHistory.length - 1
+    };
+  })),
 
   addPoint: (px, py) => set(state => updateActiveWorkspace(state, (ws) => {
     const activeSeries = ws.series.find((s) => s.id === ws.activeSeriesId);

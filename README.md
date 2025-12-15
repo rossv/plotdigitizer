@@ -6,32 +6,31 @@ A powerful, modern web-based tool for extracting numerical data from plot images
 
 ## Features
 
-### 🎯 core Digitization
+### 🎯 Core Digitization
 - **Point Extraction**: Manually place points on data series to extract X/Y coordinates.
-- **Auto-Trace Wand**: Automatically trace continuous lines or curves with a magic wand tool.
-- **Single Points**: Annotate specific points of interest separate from data series.
+- **Smart Wand**: A guided tracing tool that automatically generates points along a path you drag.
+- **Auto-Trace Wand**: Flood-fill based tracing to detect continuous lines of a specific color.
+- **Points of Interest**: Place independent "POI pins" to annotate specific locations.
 - **Selection & Manipulation**: Drag, select, and delete points. Use **Arrow Keys** to nudge selections (hold **Shift** for larger steps).
 
 ### 📐 Advanced Calibration
-- **Multiple Axes**: Support for multiple Y-axes on the same plot, each with its own scaling and color.
+- **Multiple Axes**: Support for multiple Y-axes on the same plot.
+- **Calibration Guides**: Visual crosshairs and snapping assist in aligning calibration points perfectly.
 - **Log Scales**: Full support for Logarithmic scales on both X and Y axes.
-- **Value Snapping**: Snap digitized points to specific decimal places or significant figures for cleaner data.
 
 ### 🛠️ Professional Tools
 - **Project Management**: 
   - **Tabbed Workspaces**: Work on multiple plots simultaneously.
-  - **Save & Load**: Save your entire workspace state to a local JSON file and resume later.
-- **PDF Support**: Import PDF files seamlessly and select specific pages to digitize.
-- **Curve Fitting**: Real-time regression analysis (Linear, Polynomial, Exponential) on your digitized data.
-- **Clipboard Integration**: 
-  - Paste images directly (Ctrl+V) to load them.
-  - Copy data table directly to clipboard for Excel/Sheets.
+  - **Save & Load**: Save your entire workspace state to a local JSON file.
+- **Data Series**: Rename series and customize their colors.
+- **Fit & Resample**: Fit curves (Linear, Polynomial, Exponential) to your data and resample points for even distribution.
+- **PDF Support**: Import PDF files and select specific pages.
+- **Clipboard Integration**: Paste images directly (Ctrl+V) and copy data tables to clipboard.
 
 ### 🎨 Visual & Export
-- **Modern UI**: Polished interface with Dark Mode support and smooth animations.
-- **Export Data**: Download as generic CSV or Copy TSV to clipboard.
-- **Export Graphics**: Save the annotated plot as an image.
-  - **Graphics Only**: Export just the points/lines on a transparent/white background (auto-cropped) for overlay use.
+- **Modern UI**: Polished interface with Dark Mode support.
+- **Export Data**: Download as CSV or Copy to clipboard.
+- **Export Graphics**: Save the annotated plot as an image, or use "Graphics Only" for a transparent overlay.
 
 ## Getting Started
 
@@ -60,20 +59,21 @@ A powerful, modern web-based tool for extracting numerical data from plot images
 - Or, simply **Paste** an image from your clipboard (`Ctrl+V`).
 
 ### 2. Calibrate Axes
-Before digitizing, the system needs to know the scale.
-- **X Axis**: Click **Calibrate X**, then click two known points on the X-axis (e.g., min and max). Enter their values.
-- **Y Axis**: Click **Calibrate Y** for the default axis (or add a new one). Click two separate points on the Y-axis and enter values.
+- **X Axis**: Click **Calibrate X**. Follow the visual guides to place two known points. Enter their values.
+- **Y Axis**: Click **Calibrate Y**. Place two points and enter values. 
 - *Toggle 'Log' if the axis uses a logarithmic scale.*
 
 ### 3. Digitize Data
-- **Manual**: Click **Digitize** and start clicking along the curve. 
-- **Auto-Trace**: Select **Wand**, click on a line of the graph, and follow the prompt to generate points.
-- **Manage Series**: Create new Series in the sidebar to group data (e.g., "Dataset A", "Dataset B"). Each series can be assigned to a specific Y-Axis.
-- **Refine**: Switch to **Select** mode to drag points or delete outliers (`Del` key).
+- **Manual**: Use the **Digitize** tool to click points.
+- **Smart Wand**: Use the **Smart Wand** to trace complex curves.
+- **Wand**: Use the **Wand** to auto-select lines by color.
+- **POI**: Use the **Point** tool for specific points of interest.
+- **Refine**: Switch to **Select** mode to edit points.
+- **Manage**: Rename series and change colors via the sidebar. Use "**Fit & Resample**" to smooth or decimate data.
 
 ### 4. Export
-- **Data**: Use the Copy button (clipboard) or Download button (CSV) in the Points table header.
-- **Visuals**: Use the Camera icon to save the workspace as an image, or the "Image Off" icon for a graphics-only export.
+- **Data**: Use the Copy or Download buttons in the sidebar.
+- **Visuals**: Use the Camera icon to save an image. Toggle "Image Off" icon for transparent graphics export.
 
 ## Deployment
 

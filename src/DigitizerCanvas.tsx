@@ -1,10 +1,11 @@
 import React, { useEffect, useRef, useState, useImperativeHandle, forwardRef } from 'react';
 import type { KonvaEventObject } from 'konva/lib/Node';
 import type { Stage as KonvaStage } from 'konva/lib/Stage';
-import { Circle, Group, Image as KonvaImage, Line as KonvaLine, Layer, Stage, Text, Label, Tag, Rect } from 'react-konva';
+import { Circle, Group, Image as KonvaImage, Line as KonvaLine, Layer, Stage, Text, Label, Tag, Rect, Path } from 'react-konva';
 import useImage from 'use-image';
 import { CalibrationInput } from './components/CalibrationInput';
-import { traceLine, traceLinePath } from './utils/trace';
+import { WandVariationModal } from './components/WandVariationModal';
+import { traceLine } from './utils/trace';
 import { pixelToData } from './utils/math';
 import { useStore } from './store';
 
@@ -31,9 +32,17 @@ const CalibrationHandle: React.FC<CalibrationHandleProps> = ({ x, y, label, colo
       x={x}
       y={y}
       draggable
-      dragBoundFunc={(pos) => {
-        let newX = pos.x;
-        let newY = pos.y;
+      dragBoundFunc={function (this: any, pos) {
+        const stage = this.getStage();
+        if (!stage) return pos;
+
+        // Transform absolute position to local (logical) position
+        const transform = stage.getAbsoluteTransform().copy();
+        const inverted = transform.copy().invert();
+        const localPos = inverted.point(pos);
+
+        let newX = localPos.x;
+        let newY = localPos.y;
         const SNAP_THRESHOLD = 20 / scale; // generous threshold
 
         // candidates for snapping
@@ -72,7 +81,8 @@ const CalibrationHandle: React.FC<CalibrationHandleProps> = ({ x, y, label, colo
           }
         }
 
-        return { x: newX, y: newY };
+        // Convert back to absolute position
+        return transform.point({ x: newX, y: newY });
       }}
       onDragEnd={(e) => {
         updateCalibrationPointPosition(axisType, axisId, pointIndex, e.target.x(), e.target.y());
@@ -111,9 +121,6 @@ export interface DigitizerCanvasProps {
 
 export const DigitizerCanvas = forwardRef<DigitizerHandle, DigitizerCanvasProps>(({ onLoadImage }, ref) => {
   const {
-    addPoint,
-    addSinglePoint,
-    setPendingCalibrationPoint,
     updateSeriesLabelPosition,
     activeWorkspaceId,
     workspaces,
@@ -144,6 +151,10 @@ export const DigitizerCanvas = forwardRef<DigitizerHandle, DigitizerCanvasProps>
   // Guide Lines & Cursor Coords
   const [pointerPos, setPointerPos] = useState<{ x: number, y: number } | null>(null);
   const [cursorDataCoords, setCursorDataCoords] = useState<{ x: number, y: number } | null>(null);
+
+  // Smart Wand Variations
+  const [wandModalOpen, setWandModalOpen] = useState(false);
+  const [wandModalData, setWandModalData] = useState<{ imageData: ImageData, seed: { x: number, y: number }, targetColor: { r: number, g: number, b: number } } | null>(null);
 
   useImperativeHandle(ref, () => ({
     toDataURL: (options) => {
@@ -242,6 +253,9 @@ export const DigitizerCanvas = forwardRef<DigitizerHandle, DigitizerCanvasProps>
 
   // ... (handleStageMouseMove is fine) ...
 
+  // Extracted finalization logic
+
+
   const handleStageMouseMove = (e: KonvaEventObject<MouseEvent>) => {
     const stage = e.target.getStage();
     if (!stage) return;
@@ -287,7 +301,7 @@ export const DigitizerCanvas = forwardRef<DigitizerHandle, DigitizerCanvasProps>
         let closest: { x: number; y: number } | null = null;
         let minDist = SNAP_THRESHOLD;
 
-        // Collect all potential snap targets
+        // 1. Point Snapping (Existing calibration points)
         const targets: { x: number; y: number }[] = [];
         if (xAxis.p1) targets.push({ x: xAxis.p1.px, y: xAxis.p1.py });
         if (xAxis.p2) targets.push({ x: xAxis.p2.px, y: xAxis.p2.py });
@@ -303,6 +317,38 @@ export const DigitizerCanvas = forwardRef<DigitizerHandle, DigitizerCanvasProps>
             closest = t;
           }
         }
+
+        // 2. Line Snapping (Crosshairs from P1)
+        // Only if we haven't snapped to a point yet (or maybe we should check if line snap is closer?)
+        // Let's refine: If we found a point snap, that's usually the best.
+        // But if not, check lines.
+        if (!closest) {
+          let p1: { px: number; py: number } | null = null;
+          if (mode === 'CALIBRATE_X') {
+            p1 = xAxis.p1 ? { px: xAxis.p1.px, py: xAxis.p1.py } : null;
+          } else if (mode === 'CALIBRATE_Y') {
+            const yAxis = yAxes.find(y => y.id === activeYAxisId);
+            p1 = yAxis?.calibration.p1 ? { px: yAxis.calibration.p1.px, py: yAxis.calibration.p1.py } : null;
+          }
+
+          if (p1) {
+            // Vertical Line Snap (match X)
+            const distV = Math.abs(relPointer.x - p1.px);
+            if (distV < SNAP_THRESHOLD && distV < minDist) {
+              minDist = distV;
+              closest = { x: p1.px, y: relPointer.y };
+            }
+            // Horizontal Line Snap (match Y)
+            const distH = Math.abs(relPointer.y - p1.py);
+            if (distH < SNAP_THRESHOLD && distH < minDist) {
+              minDist = distH;
+              // If we already snapped vertical, this implies intersection, but intersection is P1 which is covered by point snap.
+              // So we just take the new closest.
+              closest = { x: relPointer.x, y: p1.py };
+            }
+          }
+        }
+
         setSnapPoint(closest);
       }
     } else {
@@ -356,6 +402,74 @@ export const DigitizerCanvas = forwardRef<DigitizerHandle, DigitizerCanvasProps>
     }
   };
 
+  const finishTrace = (tracedPoints: { x: number; y: number }[]) => {
+    setWandModalOpen(false);
+    if (tracedPoints.length === 0) return;
+
+    useStore.getState().openModal({
+      type: 'prompt',
+      message: 'How many points do you want to add?',
+      defaultValue: '20',
+      onConfirm: (countStr) => {
+        if (!countStr) return;
+        const desiredCount = parseInt(countStr, 10);
+        if (isNaN(desiredCount) || desiredCount < 2) return;
+
+        const { addPoints } = useStore.getState();
+
+        const resultPoints: { px: number; py: number }[] = [];
+
+        // Strict resampling to desired count (Interpolation)
+        if (tracedPoints.length < 2 || desiredCount < 2) {
+          tracedPoints.forEach(p => resultPoints.push({ px: p.x, py: p.y }));
+        } else {
+          const cumLengths: number[] = [0];
+          let totalLength = 0;
+          for (let i = 1; i < tracedPoints.length; i++) {
+            const dx = tracedPoints[i].x - tracedPoints[i - 1].x;
+            const dy = tracedPoints[i].y - tracedPoints[i - 1].y;
+            const dist = Math.sqrt(dx * dx + dy * dy);
+            totalLength += dist;
+            cumLengths.push(totalLength);
+          }
+
+          const step = totalLength / (desiredCount - 1);
+          resultPoints.push({ px: tracedPoints[0].x, py: tracedPoints[0].y });
+
+          let currentTarget = step;
+          let idx = 0;
+
+          for (let i = 1; i < desiredCount - 1; i++) {
+            // Find segment
+            while (idx < cumLengths.length - 1 && cumLengths[idx + 1] < currentTarget) {
+              idx++;
+            }
+            // Interpolate
+            const p0 = tracedPoints[idx];
+            const p1 = tracedPoints[idx + 1];
+            const segStart = cumLengths[idx];
+            const segEnd = cumLengths[idx + 1];
+            const segLen = segEnd - segStart;
+            const t = segLen < 1e-9 ? 0 : (currentTarget - segStart) / segLen;
+
+            resultPoints.push({
+              px: p0.x + (p1.x - p0.x) * t,
+              py: p0.y + (p1.y - p0.y) * t
+            });
+
+            currentTarget += step;
+          }
+
+          const lastP = tracedPoints[tracedPoints.length - 1];
+          resultPoints.push({ px: lastP.x, py: lastP.y });
+        }
+
+        // Add points
+        addPoints(resultPoints);
+      }
+    });
+  };
+
   const handleStageClick = (e: KonvaEventObject<MouseEvent>) => {
     if (!imageUrl) return;
 
@@ -367,6 +481,12 @@ export const DigitizerCanvas = forwardRef<DigitizerHandle, DigitizerCanvasProps>
     // Prevent adding point if we were selecting
     if (selectionBox && (selectionBox.width > 2 || selectionBox.height > 2)) return;
 
+    const state = useStore.getState();
+    const { addPoint, addSinglePoint, activeWorkspaceId, workspaces, setPendingCalibrationPoint } = state;
+    const activeWorkspace = workspaces.find(w => w.id === activeWorkspaceId);
+    if (!activeWorkspace) return;
+    const mode = activeWorkspace.mode;
+
     if (mode === 'DIGITIZE') {
       addPoint(ptr.x, ptr.y);
     } else if (mode === 'SINGLE_POINT') {
@@ -374,7 +494,6 @@ export const DigitizerCanvas = forwardRef<DigitizerHandle, DigitizerCanvasProps>
     } else if (mode === 'TRACE' || mode === 'TRACE_ADVANCED') {
       if (!image) return;
 
-      // Create temporary canvas for pixel reading
       const canvas = document.createElement('canvas');
       canvas.width = image.width;
       canvas.height = image.height;
@@ -382,149 +501,32 @@ export const DigitizerCanvas = forwardRef<DigitizerHandle, DigitizerCanvasProps>
       if (!ctx) return;
       ctx.drawImage(image, 0, 0);
 
-      const targetColor = { r: 0, g: 0, b: 0 }; // Default black for now, could be dynamic
-      // Get color at click
-      const pData = ctx.getImageData(ptr.x, ptr.y, 1, 1).data;
-      targetColor.r = pData[0];
-      targetColor.g = pData[1];
-      targetColor.b = pData[2];
-
-      let tracedPoints: { x: number; y: number }[] = [];
+      const pData = ctx.getImageData(Math.round(ptr.x), Math.round(ptr.y), 1, 1).data;
+      const targetColor = { r: pData[0], g: pData[1], b: pData[2] };
 
       if (mode === 'TRACE_ADVANCED') {
-        // Use new path tracer
-        tracedPoints = traceLinePath(ctx, ptr.x, ptr.y, targetColor, 60);
+        const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+        setWandModalData({
+          imageData,
+          seed: { x: ptr.x, y: ptr.y },
+          targetColor: { ...targetColor }
+        });
+        setWandModalOpen(true);
       } else {
-        // Use legacy flood fill
-        tracedPoints = traceLine(ctx, ptr.x, ptr.y, targetColor, 60);
+        const tracedPoints = traceLine(ctx, ptr.x, ptr.y, targetColor, 60);
+        finishTrace(tracedPoints);
       }
-
-      if (tracedPoints.length === 0) return;
-
-      // Ask user for number of points
-      useStore.getState().openModal({
-        type: 'prompt',
-        message: 'How many points do you want to add?',
-        defaultValue: '20',
-        onConfirm: (countStr) => {
-          if (!countStr) return;
-          const desiredCount = parseInt(countStr, 10);
-          if (isNaN(desiredCount) || desiredCount < 2) return;
-
-          const resultPoints: { px: number; py: number }[] = [];
-
-          if (mode === 'TRACE_ADVANCED') {
-            // Arc-length based downsampling
-            if (tracedPoints.length <= desiredCount) {
-              tracedPoints.forEach(p => resultPoints.push({ px: p.x, py: p.y }));
-            } else {
-              // 1. Calculate cumulative lengths
-              const cumLengths: number[] = [0];
-              let totalLength = 0;
-              for (let i = 1; i < tracedPoints.length; i++) {
-                const p1 = tracedPoints[i - 1];
-                const p2 = tracedPoints[i];
-                const dist = Math.sqrt(Math.pow(p2.x - p1.x, 2) + Math.pow(p2.y - p1.y, 2));
-                totalLength += dist;
-                cumLengths.push(totalLength);
-              }
-
-              // 2. Sample at equal intervals
-              const step = totalLength / (desiredCount - 1);
-
-              // Always add first point
-              resultPoints.push({ px: tracedPoints[0].x, py: tracedPoints[0].y });
-
-              let currentTarget = step;
-              let lastIdx = 0;
-
-              for (let i = 1; i < desiredCount - 1; i++) {
-                // Find point closest to currentTarget
-                let closestIdx = lastIdx;
-                let minDiff = Infinity;
-
-                for (let j = lastIdx; j < cumLengths.length; j++) {
-                  const diff = Math.abs(cumLengths[j] - currentTarget);
-                  if (diff < minDiff) {
-                    minDiff = diff;
-                    closestIdx = j;
-                  } else {
-                    break;
-                  }
-                }
-
-                const p = tracedPoints[closestIdx];
-                resultPoints.push({ px: p.x, py: p.y });
-
-                lastIdx = closestIdx;
-                currentTarget += step;
-              }
-
-              // Always add last point
-              const lastP = tracedPoints[tracedPoints.length - 1];
-              resultPoints.push({ px: lastP.x, py: lastP.y });
-            }
-
-          } else {
-            // Standard X-Sort Logic
-            // 1. Sort by X
-            tracedPoints.sort((a, b) => a.x - b.x);
-
-            // 2. Thin points: Bucket by X (round to nearest pixel) and average Y
-            const buckets = new Map<number, number[]>();
-            for (const p of tracedPoints) {
-              const rx = Math.round(p.x);
-              if (!buckets.has(rx)) buckets.set(rx, []);
-              buckets.get(rx)!.push(p.y);
-            }
-
-            const uniquePoints: { x: number; y: number }[] = [];
-            const sortedXs = Array.from(buckets.keys()).sort((a, b) => a - b);
-
-            for (const x of sortedXs) {
-              const ys = buckets.get(x)!;
-              const avgY = ys.reduce((sum, y) => sum + y, 0) / ys.length;
-              uniquePoints.push({ x, y: avgY });
-            }
-
-            // 3. Select points
-            if (uniquePoints.length <= desiredCount) {
-              uniquePoints.forEach(p => resultPoints.push({ px: p.x, py: p.y }));
-            } else {
-              resultPoints.push({ px: uniquePoints[0].x, py: uniquePoints[0].y });
-
-              const minX = uniquePoints[0].x;
-              const maxX = uniquePoints[uniquePoints.length - 1].x;
-              const totalRange = maxX - minX;
-
-              const step = totalRange / (desiredCount - 1);
-
-              for (let i = 1; i < desiredCount - 1; i++) {
-                const targetX = minX + (step * i);
-                const closest = uniquePoints.reduce((prev, curr) => {
-                  return (Math.abs(curr.x - targetX) < Math.abs(prev.x - targetX) ? curr : prev);
-                });
-                resultPoints.push({ px: closest.x, py: closest.y });
-              }
-
-              resultPoints.push({ px: uniquePoints[uniquePoints.length - 1].x, py: uniquePoints[uniquePoints.length - 1].y });
-            }
-          }
-
-          useStore.getState().addPoints(resultPoints);
-        }
-      });
-
     } else if (mode === 'CALIBRATE_X') {
       const target = snapPoint || ptr;
-      setPendingCalibrationPoint({ axis: 'X', step: calibStep, px: target.x, py: target.y });
-      setCalibStep((prev) => (prev === 1 ? 2 : 1));
-      setSnapPoint(null);
+      const step = !activeWorkspace.xAxis.p1 ? 1 : 2;
+      setPendingCalibrationPoint({ axis: 'X', step, px: target.x, py: target.y });
     } else if (mode === 'CALIBRATE_Y') {
       const target = snapPoint || ptr;
-      setPendingCalibrationPoint({ axis: 'Y', step: calibStep, px: target.x, py: target.y });
-      setCalibStep((prev) => (prev === 1 ? 2 : 1));
-      setSnapPoint(null);
+      const yAxis = activeWorkspace.yAxes.find(y => y.id === activeWorkspace.activeYAxisId);
+      if (yAxis) {
+        const step = !yAxis.calibration.p1 ? 1 : 2;
+        setPendingCalibrationPoint({ axis: 'Y', step, px: target.x, py: target.y });
+      }
     }
   };
 
@@ -744,6 +746,37 @@ export const DigitizerCanvas = forwardRef<DigitizerHandle, DigitizerCanvasProps>
             );
           })}
 
+          {/* X Axis Calibration Guide */}
+          {xAxis.p1 && !xAxis.p2 && mode === 'CALIBRATE_X' && pointerPos && (
+            <>
+              {/* Crosshair Guides */}
+              <KonvaLine
+                points={[xAxis.p1.px, 0, xAxis.p1.px, stageSize.height / currentScale]}
+                stroke="#ADD8E6"
+                strokeWidth={1 / currentScale}
+                dash={[5, 3]}
+                opacity={0.8}
+                listening={false}
+              />
+              <KonvaLine
+                points={[0, xAxis.p1.py, stageSize.width / currentScale, xAxis.p1.py]}
+                stroke="#ADD8E6"
+                strokeWidth={1 / currentScale}
+                dash={[5, 3]}
+                opacity={0.8}
+                listening={false}
+              />
+              {/* Connect line to pointer */}
+              <KonvaLine
+                points={[xAxis.p1.px, xAxis.p1.py, pointerPos.x, pointerPos.y]}
+                stroke="#3b82f6"
+                strokeWidth={1 / currentScale}
+                dash={[4, 4]}
+                listening={false}
+              />
+            </>
+          )}
+
           {/* X Axis */}
           {xAxis.p1 && xAxis.p2 && (
             <>
@@ -753,17 +786,44 @@ export const DigitizerCanvas = forwardRef<DigitizerHandle, DigitizerCanvasProps>
                 strokeWidth={1 / currentScale}
                 dash={[4, 4]}
               />
-              <Text
-                text={xAxisName}
-                x={(xAxis.p1.px + xAxis.p2.px) / 2}
-                y={(xAxis.p1.py + xAxis.p2.py) / 2}
-                rotation={Math.atan2(xAxis.p2.py - xAxis.p1.py, xAxis.p2.px - xAxis.p1.px) * 180 / Math.PI}
-                fill="#3b82f6"
-                fontSize={16 / currentScale}
-                fontStyle="bold"
-                offsetY={15 / currentScale}
-                offsetX={(xAxisName.length * 8) / (2 * currentScale)} // Approx centering
-              />
+              {(() => {
+                const midX = (xAxis.p1.px + xAxis.p2.px) / 2;
+                const midY = (xAxis.p1.py + xAxis.p2.py) / 2;
+                const angleRad = Math.atan2(xAxis.p2.py - xAxis.p1.py, xAxis.p2.px - xAxis.p1.px);
+
+                const isBottom = image ? midY > image.height / 2 : true;
+                const dist = 25 / currentScale;
+
+                const nx = -Math.sin(angleRad) * dist;
+                const ny = Math.cos(angleRad) * dist;
+
+                let fx = midX + nx;
+                let fy = midY + ny;
+
+                const wentDown = fy > midY;
+
+                if (isBottom && !wentDown) {
+                  fx = midX - nx;
+                  fy = midY - ny;
+                } else if (!isBottom && wentDown) {
+                  fx = midX - nx;
+                  fy = midY - ny;
+                }
+
+                return (
+                  <Text
+                    text={xAxisName}
+                    x={fx}
+                    y={fy}
+                    rotation={angleRad * 180 / Math.PI}
+                    fill="#3b82f6"
+                    fontSize={16 / currentScale}
+                    fontStyle="bold"
+                    offsetY={(16 / currentScale) / 2}
+                    offsetX={(xAxisName.length * 8) / (2 * currentScale)}
+                  />
+                );
+              })()}
             </>
           )}
           {xAxis.p1 && (
@@ -837,17 +897,47 @@ export const DigitizerCanvas = forwardRef<DigitizerHandle, DigitizerCanvasProps>
                       dash={[4, 4]}
                       listening={false}
                     />
-                    <Text
-                      text={axis.name}
-                      x={(p1.px + p2.px) / 2}
-                      y={(p1.py + p2.py) / 2}
-                      rotation={Math.atan2(p2.py - p1.py, p2.px - p1.px) * 180 / Math.PI}
-                      fill={color}
-                      fontSize={16 / currentScale}
-                      fontStyle="bold"
-                      offsetY={15 / currentScale}
-                      offsetX={(axis.name.length * 8) / (2 * currentScale)}
-                    />
+                    {(() => {
+                      const midX = (p1.px + p2.px) / 2;
+                      const midY = (p1.py + p2.py) / 2;
+                      const angleRad = Math.atan2(p2.py - p1.py, p2.px - p1.px);
+
+                      // "if calibration points are more towards the right... place label to the right"
+                      // "if towards left... place to left"
+                      const isRight = image ? midX > image.width / 2 : true;
+                      const dist = 25 / currentScale;
+
+                      const nx = -Math.sin(angleRad) * dist;
+                      const ny = Math.cos(angleRad) * dist;
+
+                      let fx = midX + nx;
+                      let fy = midY + ny;
+
+                      // Check alignment
+                      const wentRight = fx > midX;
+
+                      if (isRight && !wentRight) {
+                        fx = midX - nx;
+                        fy = midY - ny;
+                      } else if (!isRight && wentRight) {
+                        fx = midX - nx;
+                        fy = midY - ny;
+                      }
+
+                      return (
+                        <Text
+                          text={axis.name}
+                          x={fx}
+                          y={fy}
+                          rotation={angleRad * 180 / Math.PI}
+                          fill={color}
+                          fontSize={16 / currentScale}
+                          fontStyle="bold"
+                          offsetY={(16 / currentScale) / 2}
+                          offsetX={(axis.name.length * 8) / (2 * currentScale)}
+                        />
+                      );
+                    })()}
                   </>
                 )}
                 {p1 && (
@@ -877,6 +967,37 @@ export const DigitizerCanvas = forwardRef<DigitizerHandle, DigitizerCanvasProps>
                     xAxis={xAxis}
                     yAxes={yAxes}
                   />
+                )}
+
+                {/* Y Axis Calibration Guide */}
+                {p1 && !p2 && mode === 'CALIBRATE_Y' && axis.id === activeYAxisId && pointerPos && (
+                  <>
+                    {/* Crosshair Guides */}
+                    <KonvaLine
+                      points={[p1.px, 0, p1.px, stageSize.height / currentScale]}
+                      stroke="#ADD8E6"
+                      strokeWidth={1 / currentScale}
+                      dash={[5, 3]}
+                      opacity={0.8}
+                      listening={false}
+                    />
+                    <KonvaLine
+                      points={[0, p1.py, stageSize.width / currentScale, p1.py]}
+                      stroke="#ADD8E6"
+                      strokeWidth={1 / currentScale}
+                      dash={[5, 3]}
+                      opacity={0.8}
+                      listening={false}
+                    />
+                    {/* Connect line to pointer */}
+                    <KonvaLine
+                      points={[p1.px, p1.py, pointerPos.x, pointerPos.y]}
+                      stroke={color}
+                      strokeWidth={1 / currentScale}
+                      dash={[4, 4]}
+                      listening={false}
+                    />
+                  </>
                 )}
               </Group>
             );
@@ -940,27 +1061,73 @@ export const DigitizerCanvas = forwardRef<DigitizerHandle, DigitizerCanvasProps>
             </>
           )}
 
-          {points.map((p) => (
-            <Circle
-              key={p.id}
-              x={p.x}
-              y={p.y}
-              radius={(p['isSinglePoint'] ? (p.selected ? 10 : 8) : (p.selected ? 6 : 4)) / currentScale}
-              fill={p.color}
-              stroke={p.selected ? '#3b82f6' : '#0f172a'}
-              strokeWidth={(p.selected ? 3 : 1) / currentScale}
-              draggable
-              onDragEnd={(e) => {
-                updatePointPosition(p.id, e.target.x(), e.target.y());
-              }}
-              onClick={(e) => {
-                e.cancelBubble = true;
-                if (mode === 'SELECT' || mode === 'DIGITIZE' || mode === 'SINGLE_POINT') {
-                  togglePointSelection(p.id, e.evt.ctrlKey || e.evt.shiftKey);
-                }
-              }}
-            />
-          ))}
+          {points.map((p) => {
+            if (p.isSinglePoint) {
+              return (
+                <Group
+                  key={p.id}
+                  x={p.x}
+                  y={p.y}
+                  draggable
+                  onDragEnd={(e) => {
+                    updatePointPosition(p.id, e.target.x(), e.target.y());
+                  }}
+                  onClick={(e) => {
+                    e.cancelBubble = true;
+                    if (mode === 'SELECT' || mode === 'DIGITIZE' || mode === 'SINGLE_POINT') {
+                      togglePointSelection(p.id, e.evt.ctrlKey || e.evt.shiftKey);
+                    }
+                  }}
+                >
+                  <Group
+                    scaleX={1 / currentScale}
+                    scaleY={1 / currentScale}
+                    offsetX={12}
+                    offsetY={22}
+                  >
+                    <Path
+                      data="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"
+                      fill={p.color}
+                      stroke={p.selected ? '#3b82f6' : '#0f172a'}
+                      strokeWidth={p.selected ? 2 : 1.5}
+                      shadowColor="black"
+                      shadowBlur={4}
+                      shadowOpacity={0.3}
+                    />
+                    <Circle
+                      x={12}
+                      y={10}
+                      radius={3}
+                      fill="white"
+                      listening={false}
+                    />
+                  </Group>
+                </Group>
+              );
+            }
+
+            return (
+              <Circle
+                key={p.id}
+                x={p.x}
+                y={p.y}
+                radius={(p.selected ? 6 : 4) / currentScale}
+                fill={p.color}
+                stroke={p.selected ? '#3b82f6' : '#0f172a'}
+                strokeWidth={(p.selected ? 3 : 1) / currentScale}
+                draggable
+                onDragEnd={(e) => {
+                  updatePointPosition(p.id, e.target.x(), e.target.y());
+                }}
+                onClick={(e) => {
+                  e.cancelBubble = true;
+                  if (mode === 'SELECT' || mode === 'DIGITIZE' || mode === 'SINGLE_POINT') {
+                    togglePointSelection(p.id, e.evt.ctrlKey || e.evt.shiftKey);
+                  }
+                }}
+              />
+            );
+          })}
 
           {/* Point Coordinate Labels */}
           {points.map((p) => {
@@ -1038,6 +1205,17 @@ export const DigitizerCanvas = forwardRef<DigitizerHandle, DigitizerCanvasProps>
           })}
         </Layer>
       </Stage>
+
+      {wandModalOpen && wandModalData && (
+        <WandVariationModal
+          isOpen={wandModalOpen}
+          imageData={wandModalData.imageData}
+          seed={wandModalData.seed}
+          targetColor={wandModalData.targetColor}
+          onSelect={(points) => finishTrace(points)}
+          onClose={() => setWandModalOpen(false)}
+        />
+      )}
     </div>
   );
 });

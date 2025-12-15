@@ -196,6 +196,7 @@ export const HelpModal: React.FC<HelpModalProps> = ({ isOpen, onClose }) => {
                                 <ul className="list-disc pl-5 space-y-1">
                                     <li>Click "Calibrate X" in the sidebar. Click two points on the X-axis of your image and enter their values.</li>
                                     <li>Click "Calibrate Y" (or standard Y axis). Click two points on the Y-axis and enter their values.</li>
+                                    <li><strong>Calibration Guides:</strong> Visual crosshairs and guides assist in aligning the second point perfectly horizontally or vertically.</li>
                                     <li>Ensure axes names and log scales are set correctly if needed.</li>
                                 </ul>
                             </section>
@@ -203,19 +204,27 @@ export const HelpModal: React.FC<HelpModalProps> = ({ isOpen, onClose }) => {
                             <section>
                                 <h4 className="font-bold text-slate-800 dark:text-slate-100 mb-2">3. Digitize Points</h4>
                                 <ul className="list-disc pl-5 space-y-1">
-                                    <li>Select a Data Series (or add a new one).</li>
-                                    <li>Click "Digitize" mode to start adding points. Click on the data points in the image.</li>
-                                    <li>Use "Trace" mode (Wand) to automatically detect lines by clicking and dragging along a curve.</li>
-                                    <li>Use "Select / Edit" to move or delete existing points.</li>
+                                    <li><strong>Digitize (Manual):</strong> Click to place individual points along the data series.</li>
+                                    <li><strong>Wand (Auto-Trace):</strong> Click and drag to flood-fill and detect lines of a specific color.</li>
+                                    <li><strong>Smart Wand:</strong> A guided tracing tool that follows the path you drag along, automatically placing points.</li>
+                                    <li><strong>Point Tool:</strong> Place independent "Points of Interest" (POI pins) separate from the main data series.</li>
+                                    <li><strong>Select / Edit:</strong> Move or delete existing points.</li>
                                 </ul>
                             </section>
 
                             <section>
-                                <h4 className="font-bold text-slate-800 dark:text-slate-100 mb-2">4. Export Data</h4>
+                                <h4 className="font-bold text-slate-800 dark:text-slate-100 mb-2">4. Managing Data</h4>
                                 <ul className="list-disc pl-5 space-y-1">
-                                    <li>The data table in the sidebar updates automatically.</li>
-                                    <li>Click the Copy button to copy data to clipboard.</li>
-                                    <li>Click the Download button to export as CSV.</li>
+                                    <li><strong>Series Management:</strong> Add multiple data series. Rename them and change their color using the color picker dot.</li>
+                                    <li><strong>Fit & Resample:</strong> Use the "Fit & Resample" button to fit a curve (Linear, Polynomial, Exponential) and generate a new set of evenly spaced points based on that fit.</li>
+                                </ul>
+                            </section>
+
+                            <section>
+                                <h4 className="font-bold text-slate-800 dark:text-slate-100 mb-2">5. Export Data</h4>
+                                <ul className="list-disc pl-5 space-y-1">
+                                    <li>The data table updates automatically. Click "Copy" or "Download CSV".</li>
+                                    <li>Export the annotated plot as an image, or "Graphics Only" for a transparent overlay.</li>
                                 </ul>
                             </section>
                         </div>

@@ -41,6 +41,7 @@ export const CalibrationInput: React.FC = () => {
                         <input
                             ref={inputRef}
                             id="calib-value"
+                            title="Enter the logical value for this calibration point"
                             type="number"
                             step="any"
                             value={value}
@@ -54,12 +55,14 @@ export const CalibrationInput: React.FC = () => {
                         <button
                             type="button"
                             onClick={() => setPendingCalibrationPoint(null)}
+                            title="Cancel calibration"
                             className="px-3 py-2 text-sm text-slate-600 hover:text-slate-800 font-medium"
                         >
                             Cancel
                         </button>
                         <button
                             type="submit"
+                            title="Save calibration point"
                             className="px-3 py-2 text-sm bg-blue-600 text-white rounded hover:bg-blue-700 font-medium shadow-sm"
                         >
                             Confirm

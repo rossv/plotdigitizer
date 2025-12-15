@@ -272,3 +272,62 @@ const generateCurvePoints = (
     }
     return curvePoints;
 };
+
+
+export const findBestFit = (points: Point[]): { config: { type: 'linear' | 'polynomial' | 'exponential', order?: number }, result: FitResult } | null => {
+    // Try Linear
+    const linear = fitLinear(points);
+
+    // Explicitly type 'best' to allow other fit types later
+    let best: { config: { type: 'linear' | 'polynomial' | 'exponential', order?: number }, result: FitResult } | null = linear
+        ? { config: { type: 'linear' as const }, result: linear }
+        : null;
+
+    // Try Exponential
+    const exponential = fitExponential(points);
+    if (exponential && (!best || exponential.r2 > best.result.r2)) {
+        best = { config: { type: 'exponential' as const }, result: exponential };
+    }
+
+    // Try Polynomial (2 to 6)
+    for (let order = 2; order <= 6; order++) {
+        const poly = fitPolynomial(points, order);
+        if (poly && (!best || poly.r2 > best.result.r2)) {
+            // Penalize higher order slightly to prefer simpler models if R2 is very close?
+            // For now, strict R2.
+            best = { config: { type: 'polynomial' as const, order }, result: poly };
+        }
+    }
+
+    return best;
+};
+
+export const generatePointsFromPredict = (
+    predict: (x: number) => number,
+    minX: number,
+    maxX: number,
+    count: number,
+    seriesId: string
+): Point[] => {
+    if (count < 2) return [];
+
+    const step = (maxX - minX) / (count - 1);
+    const newPoints: Point[] = [];
+
+    for (let i = 0; i < count; i++) {
+        const x = minX + i * step;
+        const y = predict(x);
+        newPoints.push({
+            id: `resampled-${Date.now()}-${i}`,
+            x: 0, // Pixel coordinates will be recalculated by caller or rendering if needed, but usually we need them?
+            // Wait, points in store need pixel coordinates for editing.
+            // We only have data coordinates here.
+            // The store action will need to convert data->pixel.
+            y: 0,
+            seriesId,
+            dataX: x,
+            dataY: y
+        });
+    }
+    return newPoints;
+};

@@ -1,4 +1,4 @@
-import { traceCostBased } from './traceCost';
+import { smartWandTrace } from './smartWand';
 
 export const traceLine = (
     ctx: CanvasRenderingContext2D,
@@ -62,12 +62,13 @@ export const traceLinePath = (
     ctx: CanvasRenderingContext2D,
     startX: number,
     startY: number,
-    targetColor: { r: number; g: number; b: number },
-    tolerance: number = 50
+
 ): { x: number; y: number }[] => {
+    const width = ctx.canvas.width;
+    const height = ctx.canvas.height;
+    const imageData = ctx.getImageData(0, 0, width, height);
 
-
-    // Use the new Cost-Based Pathfinding (Livewire/Intelligent Scissors)
-    // This handles solid lines, dashed lines, and gaps robustly.
-    return traceCostBased(ctx, startX, startY, targetColor, tolerance);
+    // Use improved Smart Wand algorithm
+    // Note: targetColor is ignored by smartWandTrace as it uses robust statistics from the seed neighborhood
+    return smartWandTrace(imageData, { x: startX, y: startY });
 };

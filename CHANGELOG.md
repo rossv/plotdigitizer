@@ -2,6 +2,28 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.2.0] - 2025-12-14
+
+### Added
+- **Smart Wand**: New guided tracing tool for accurate curve digitization.
+- **Fit & Resample**: Curve fitting (Linear, Polynomial, Exponential) with automatic point resampling.
+- **Calibration Guides**: Visual crosshairs and snapping when calibrating axes for perfect alignment.
+- **Series Customization**:
+  - Color picker for individual data series.
+  - "Name" label for clear series renaming.
+- **Visual Enhancements**:
+  - **POI Pins**: Updated style for independent points of interest.
+  - **Cursor Coordinates**: Real-time X/Y coordinates displayed next to cursor.
+  - **Unique Icons**: Distinct icons for Wand, Smart Wand, and Digitize tools.
+  - **Status Indicators**: Green outline on calibration boxes when calibrated.
+  - Smooth height animations for sidebar interactions.
+
+### Fixed
+- Improved recalibration logic to correctly clear and re-prompt for points.
+- Fixed vertical snapping precision for calibration points.
+- Enhanced Smart Wand path detection and point generation.
+- Corrected various tooltip visibility and text.
+
 ## [0.1.0] - 2025-12-13
 
 ### Added

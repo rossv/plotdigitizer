@@ -1,6 +1,6 @@
 
 import React, { useEffect, useRef } from 'react';
-import { Plus, ScanLine, Image as ImageIcon, Sun, Moon, Trash2, Download, Database, Undo, Redo, Camera, Copy, ImageOff, Save, FolderOpen, X, MousePointer2, Magnet, HelpCircle, MapPin, Check, CheckCircle2, Wand2, Sparkles } from 'lucide-react';
+import { Plus, ScanLine, Image as ImageIcon, Sun, Moon, Trash2, Download, Database, Undo, Redo, Camera, Copy, ImageOff, Save, FolderOpen, X, MousePointer2, Magnet, HelpCircle, MapPin, Check, CheckCircle2, Wand2, Sparkles, Activity } from 'lucide-react';
 import { DigitizerCanvas } from './DigitizerCanvas';
 import type { DigitizerHandle } from './DigitizerCanvas';
 import { useStore } from './store';
@@ -58,11 +58,14 @@ export default function App() {
     undo,
     redo,
     updateSeriesName,
+    updateSeriesColor,
     clearSeriesPoints,
     toggleSeriesLabels,
     deleteSelectedPoints,
     nudgeSelection,
     toggleSeriesPointCoordinates,
+    startCalibration,
+    resampleActiveSeries,
   } = useStore();
 
   const activeWorkspace = workspaces.find(w => w.id === activeWorkspaceId);
@@ -340,6 +343,7 @@ export default function App() {
             <div className="grid grid-cols-2 gap-2">
               <button
                 onClick={handleSaveProject}
+                title="Save current project to a JSON file"
                 className={`flex items-center justify-center gap-2 px-3 py-2 rounded-lg border transition-all active:scale-95 hover:shadow-sm text-xs font-medium animate-pop duration-200 ${saveSuccess
                   ? 'bg-emerald-50 dark:bg-emerald-900/20 border-emerald-200 dark:border-emerald-800 text-emerald-600 dark:text-emerald-400'
                   : 'border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400 hover:text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-900/20'
@@ -348,7 +352,7 @@ export default function App() {
                 {saveSuccess ? <div className="animate-scale-in"><Check className="h-4 w-4" /></div> : <Save className="h-4 w-4" />}
                 {saveSuccess ? 'Saved!' : 'Save Project'}
               </button>
-              <label className="flex items-center justify-center gap-2 px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400 hover:text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-900/20 transition-all active:scale-95 hover:shadow-sm text-xs font-medium cursor-pointer">
+              <label className="flex items-center justify-center gap-2 px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400 hover:text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-900/20 transition-all active:scale-95 hover:shadow-sm text-xs font-medium cursor-pointer" title="Load a previously saved project JSON file">
                 <input
                   type="file"
                   accept=".json"
@@ -369,7 +373,7 @@ export default function App() {
                   onChange={handleFile}
                   className="hidden"
                 />
-                <div className="flex items-center justify-center gap-2 w-full px-3 py-2 rounded-lg border border-dashed border-slate-300 dark:border-slate-600 text-slate-600 dark:text-slate-400 hover:border-blue-500 dark:hover:border-blue-400 hover:text-blue-600 dark:hover:text-blue-400 text-xs font-medium transition-all hover:bg-blue-50/50 dark:hover:bg-blue-900/10 hover:shadow-sm active:scale-95">
+                <div className="flex items-center justify-center gap-2 w-full px-3 py-2 rounded-lg border border-dashed border-slate-300 dark:border-slate-600 text-slate-600 dark:text-slate-400 hover:border-blue-500 dark:hover:border-blue-400 hover:text-blue-600 dark:hover:text-blue-400 text-xs font-medium transition-all hover:bg-blue-50/50 dark:hover:bg-blue-900/10 hover:shadow-sm active:scale-95" title="Upload an image or PDF to start digitizing">
                   <ImageIcon className="h-4 w-4" />
                   Load Image / PDF
                 </div>
@@ -395,13 +399,14 @@ export default function App() {
             <div className={`p-3 rounded-xl border transition-all ${mode === 'CALIBRATE_X'
               ? 'bg-blue-50/50 dark:bg-blue-900/10 border-blue-200 dark:border-blue-800'
               : isXCalibrated
-                ? 'bg-emerald-50/50 dark:bg-emerald-900/10 border-emerald-200/50 dark:border-emerald-800/50'
+                ? 'bg-green-100 dark:bg-green-900/40 border-green-500 dark:border-green-400 border-2'
                 : 'bg-slate-50 dark:bg-slate-800/50 border-slate-200 dark:border-slate-700'
               }`}>
               <div className="flex items-center gap-2 mb-2">
                 <div className={`w-2.5 h-2.5 rounded-full shrink-0 border-2 transition-colors duration-300 ${isXCalibrated ? 'bg-blue-500 border-blue-500' : 'border-blue-500 bg-transparent'}`} />
                 <input
                   type="text"
+                  title="Name of the X axis"
                   value={xAxisName}
                   onChange={(e) => setXAxisName(e.target.value)}
                   className="flex-1 min-w-0 text-xs font-medium bg-transparent border-none p-0 focus:ring-0 text-slate-700 dark:text-slate-200 placeholder-slate-400"
@@ -409,6 +414,7 @@ export default function App() {
                 />
                 <button
                   onClick={toggleXAxisLog}
+                  title="Toggle Logarithmic Scale for X Axis"
                   className={`text-[10px] px-2 py-0.5 rounded border transition shrink-0 ${xAxis.isLog
                     ? 'border-blue-500 text-blue-600 bg-blue-50 dark:bg-blue-900/20 dark:text-blue-400'
                     : 'border-slate-200 dark:border-slate-700 text-slate-400 hover:border-slate-300'
@@ -423,7 +429,8 @@ export default function App() {
                 )}
               </div>
               <button
-                onClick={() => setMode('CALIBRATE_X')}
+                onClick={() => startCalibration('X')}
+                title="Start calibration for X axis"
                 className={`w-full flex items-center justify-center gap-2 rounded-lg px-2 py-1.5 text-xs font-bold transition-all active:scale-95 hover:shadow-sm ${mode === 'CALIBRATE_X'
                   ? 'bg-blue-600 text-white shadow-blue-500/30 animate-pulse-slow'
                   : 'bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-600 text-slate-600 dark:text-slate-300 hover:border-slate-300 dark:hover:border-slate-500'
@@ -458,7 +465,7 @@ export default function App() {
                       className={`p-3 rounded-xl border transition-all cursor-pointer animate-slide-up ${isCalibrating
                         ? 'bg-blue-50/50 dark:bg-blue-900/10 border-blue-200 dark:border-blue-800 ring-1 ring-blue-500/10'
                         : isYCalibrated
-                          ? `bg-emerald-50/50 dark:bg-emerald-900/10 border-emerald-200/50 dark:border-emerald-800/50 ${isActive ? 'ring-1 ring-blue-500/20' : ''}`
+                          ? `bg-green-100 dark:bg-green-900/40 border-green-500 dark:border-green-400 border-2 ${isActive ? 'ring-1 ring-blue-500/20' : ''}`
                           : `bg-slate-50 dark:bg-slate-800/50 border-slate-200 dark:border-slate-700 hover:border-slate-300 dark:hover:border-slate-600 ${isActive ? 'ring-1 ring-blue-500/20' : ''}`
                         }`}
                     >
@@ -472,6 +479,7 @@ export default function App() {
                         />
                         <input
                           type="text"
+                          title="Name of the Y axis"
                           value={y.name}
                           onChange={(e) => updateYAxisName(y.id, e.target.value)}
                           onClick={(e) => e.stopPropagation()}
@@ -480,6 +488,7 @@ export default function App() {
                         />
                         <button
                           onClick={(e) => { e.stopPropagation(); toggleYAxisLog(y.id); }}
+                          title="Toggle Logarithmic Scale for Y Axis"
                           className={`text-[10px] px-2 py-0.5 rounded border transition shrink-0 ${y.calibration.isLog
                             ? 'border-blue-500 text-blue-600 bg-blue-50 dark:bg-blue-900/20 dark:text-blue-400'
                             : 'border-slate-200 dark:border-slate-700 text-slate-400 hover:border-slate-300'
@@ -495,6 +504,7 @@ export default function App() {
                         {yAxes.length > 1 && (
                           <button
                             onClick={(e) => { e.stopPropagation(); deleteYAxis(y.id); }}
+                            title="Delete this Y axis"
                             className="p-1 rounded text-slate-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 transition"
                           >
                             <Trash2 className="h-3.5 w-3.5" />
@@ -505,8 +515,9 @@ export default function App() {
                         onClick={(e) => {
                           e.stopPropagation();
                           setActiveYAxis(y.id);
-                          setMode('CALIBRATE_Y');
+                          startCalibration('Y', y.id);
                         }}
+                        title="Start calibration for this Y axis"
                         className={`w-full flex items-center justify-center gap-2 rounded-lg px-2 py-1.5 text-xs font-bold transition-all active:scale-95 hover:shadow-sm ${isCalibrating
                           ? 'bg-blue-600 text-white shadow-blue-500/30 animate-pulse-slow'
                           : 'bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-600 text-slate-600 dark:text-slate-300 hover:border-slate-300 dark:hover:border-slate-500'
@@ -527,6 +538,7 @@ export default function App() {
               <h3 className="font-semibold text-slate-800 dark:text-slate-200 text-sm">Data Series</h3>
               <button
                 onClick={addSeries}
+                title="Create a new data series"
                 className="p-1 rounded hover:bg-slate-100 dark:hover:bg-slate-800 text-blue-600 dark:text-blue-400 transition"
               >
                 <Plus className="h-4 w-4" />
@@ -535,6 +547,7 @@ export default function App() {
 
             <select
               value={activeSeriesId}
+              title="Select active data series"
               onChange={(e) => setActiveSeries(e.target.value)}
               className="w-full text-sm px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 text-slate-700 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-500/20"
             >
@@ -549,8 +562,28 @@ export default function App() {
               <div className="space-y-3 pt-2">
                 <div className="flex items-center gap-2">
                   <span className="text-xs font-medium text-slate-500 dark:text-slate-400 whitespace-nowrap">Name:</span>
+
+                  <div className="relative group/color">
+                    <div
+                      className="w-5 h-5 rounded-full border border-slate-200 dark:border-slate-700 shadow-sm cursor-pointer transition-transform active:scale-95 hover:shadow-md"
+                      style={{ backgroundColor: activeSeries?.color }}
+                      title="Change series color"
+                      onClick={(e) => {
+                        const input = e.currentTarget.nextElementSibling as HTMLInputElement;
+                        input?.click();
+                      }}
+                    />
+                    <input
+                      type="color"
+                      value={activeSeries?.color || '#000000'}
+                      onChange={(e) => updateSeriesColor(activeSeriesId, e.target.value)}
+                      className="absolute opacity-0 w-0 h-0 -z-10"
+                    />
+                  </div>
+
                   <input
                     type="text"
+                    title="Rename selected series"
                     value={activeSeries?.name || ''}
                     onChange={(e) => updateSeriesName(activeSeriesId, e.target.value)}
                     className="flex-1 text-xs px-2 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-200 focus:outline-none focus:border-blue-500"
@@ -575,6 +608,7 @@ export default function App() {
                   <span className="text-xs font-medium text-slate-500 dark:text-slate-400 whitespace-nowrap">Y Axis:</span>
                   <select
                     value={activeSeries.yAxisId}
+                    title="Associate this series with a specific Y axis"
                     onChange={(e) => setSeriesYAxis(activeSeriesId, e.target.value)}
                     className="flex-1 text-xs px-2 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-200 focus:outline-none focus:border-blue-500"
                   >
@@ -588,7 +622,7 @@ export default function App() {
 
                 <div className="bg-slate-50 dark:bg-slate-800/50 p-2.5 rounded-lg border border-slate-100 dark:border-slate-800 space-y-2" ref={seriesSettingsParent}>
                   <div className="flex items-center justify-between">
-                    <label className="text-xs font-medium text-slate-700 dark:text-slate-300 flex items-center gap-2 cursor-pointer select-none">
+                    <label className="text-xs font-medium text-slate-700 dark:text-slate-300 flex items-center gap-2 cursor-pointer select-none" title="Apply a curve fit to the data points">
                       <input
                         type="checkbox"
                         checked={activeSeries.fitConfig.enabled}
@@ -605,7 +639,7 @@ export default function App() {
                   </div>
 
                   <div className="flex items-center justify-between">
-                    <label className="text-xs font-medium text-slate-700 dark:text-slate-300 flex items-center gap-2 cursor-pointer select-none">
+                    <label className="text-xs font-medium text-slate-700 dark:text-slate-300 flex items-center gap-2 cursor-pointer select-none" title="Show point labels on the canvas">
                       <input
                         type="checkbox"
                         checked={!!activeSeries.showLabels}
@@ -617,7 +651,7 @@ export default function App() {
                   </div>
 
                   <div className="flex items-center justify-between">
-                    <label className="text-xs font-medium text-slate-700 dark:text-slate-300 flex items-center gap-2 cursor-pointer select-none">
+                    <label className="text-xs font-medium text-slate-700 dark:text-slate-300 flex items-center gap-2 cursor-pointer select-none" title="Show coordinate values next to points">
                       <input
                         type="checkbox"
                         checked={!!activeSeries.showPointCoordinates}
@@ -678,6 +712,7 @@ export default function App() {
               <button
                 disabled={!isCalibrated}
                 onClick={() => setMode(mode === 'DIGITIZE' ? 'IDLE' : 'DIGITIZE')}
+                title="Manually add points by clicking"
                 className={`flex items-center justify-center gap-2 rounded-xl px-3 py-3 text-sm font-bold transition-all active:scale-95 hover:shadow-md ${mode === 'DIGITIZE'
                   ? 'bg-emerald-600 text-white shadow-emerald-500/40 scale-[1.02] animate-pulse-slow'
                   : isCalibrated
@@ -691,6 +726,7 @@ export default function App() {
               <button
                 disabled={!isCalibrated}
                 onClick={() => setMode(mode === 'TRACE' ? 'IDLE' : 'TRACE')}
+                title="Auto-trace lines by clicking on them"
                 className={`flex items-center justify-center gap-2 rounded-xl px-3 py-3 text-sm font-bold transition-all active:scale-95 hover:shadow-md ${mode === 'TRACE'
                   ? 'bg-purple-600 text-white shadow-purple-500/40 scale-[1.02] animate-pulse-slow'
                   : isCalibrated
@@ -722,6 +758,7 @@ export default function App() {
               <button
                 disabled={!isCalibrated}
                 onClick={() => setMode(mode === 'SINGLE_POINT' ? 'IDLE' : 'SINGLE_POINT')}
+                title="Add single independent points"
                 className={`flex items-center justify-center gap-2 rounded-xl px-3 py-3 text-sm font-bold transition-all active:scale-95 hover:shadow-md ${mode === 'SINGLE_POINT'
                   ? 'bg-amber-500 text-white shadow-amber-500/40 scale-[1.02] animate-pulse-slow'
                   : isCalibrated
@@ -736,6 +773,7 @@ export default function App() {
               <button
                 disabled={!isCalibrated}
                 onClick={() => setMode(mode === 'SELECT' ? 'IDLE' : 'SELECT')}
+                title="Select and manipulate existing points"
                 className={`flex items-center justify-center gap-2 rounded-xl px-3 py-3 text-sm font-bold transition-all active:scale-95 hover:shadow-md ${mode === 'SELECT'
                   ? 'bg-blue-600 text-white shadow-blue-500/40 scale-[1.02] animate-pulse-slow'
                   : isCalibrated
@@ -745,6 +783,34 @@ export default function App() {
               >
                 <MousePointer2 className="h-4 w-4" />
                 Select
+              </button>
+              <button
+                disabled={!isCalibrated || !activeSeries}
+                onClick={() => {
+                  openModal({
+                    type: 'prompt',
+                    title: 'Resample / Fit',
+                    message: 'Enter target number of points (e.g. 10 to decimate, 100 to interpolate). This will replace current points with points from the best-fit curve.',
+                    defaultValue: activeSeries?.points.length.toString(),
+                    confirmLabel: 'Resample',
+                    onConfirm: (val) => {
+                      const count = parseInt(val || '0');
+                      if (count > 1) {
+                        resampleActiveSeries(count);
+                      }
+                    }
+                  });
+                }}
+                title="Resample points using best-fit curve"
+                className={`flex items-center justify-center gap-2 rounded-xl px-3 py-3 text-sm font-bold transition-all active:scale-95 hover:shadow-md ${false // No active mode for this action?
+                  ? 'bg-indigo-600 text-white shadow-indigo-500/40 scale-[1.02] animate-pulse-slow'
+                  : isCalibrated && activeSeries && activeSeries.points.length >= 2
+                    ? 'bg-indigo-50 dark:bg-indigo-900/20 text-indigo-700 dark:text-indigo-400 hover:bg-indigo-100 dark:hover:bg-indigo-900/30 ring-1 ring-inset ring-indigo-600/20'
+                    : 'bg-slate-100 dark:bg-slate-800 text-slate-400 cursor-not-allowed'
+                  }`}
+              >
+                <Activity className="h-4 w-4" />
+                Resample
               </button>
             </div>
           </div>
