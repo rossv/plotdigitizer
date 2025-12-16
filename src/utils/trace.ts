@@ -187,3 +187,114 @@ export const traceLinePath = (
     // Note: targetColor is ignored by smartWandTrace as it uses robust statistics from the seed neighborhood
     return smartWandTrace(imageData, { x: startX, y: startY });
 };
+
+// Polyline Simplification
+export const simplifyRDP = (points: { x: number, y: number }[], epsilon: number): { x: number, y: number }[] => {
+    if (points.length < 3) return points;
+
+    let dmax = 0;
+    let index = 0;
+    const end = points.length - 1;
+
+    for (let i = 1; i < end; i++) {
+        const x1 = points[0].x, y1 = points[0].y;
+        const x2 = points[end].x, y2 = points[end].y;
+        const x0 = points[i].x, y0 = points[i].y;
+
+        let d = 0;
+        const dx = x2 - x1;
+        const dy = y2 - y1;
+        if (dx === 0 && dy === 0) {
+            d = Math.sqrt((x0 - x1) ** 2 + (y0 - y1) ** 2);
+        } else {
+            const num = Math.abs(dy * x0 - dx * y0 + x2 * y1 - y2 * x1);
+            const den = Math.sqrt(dx * dx + dy * dy);
+            d = num / den;
+        }
+
+        if (d > dmax) {
+            index = i;
+            dmax = d;
+        }
+    }
+
+    if (dmax > epsilon) {
+        const recResults1 = simplifyRDP(points.slice(0, index + 1), epsilon);
+        const recResults2 = simplifyRDP(points.slice(index), epsilon);
+        return [...recResults1.slice(0, -1), ...recResults2];
+    } else {
+        return [points[0], points[end]];
+    }
+};
+
+// Resample Points (Interpolation)
+export const resamplePoints = (points: { x: number; y: number }[], count: number): { px: number; py: number }[] => {
+    if (count < 2 || points.length < 2) {
+        return points.map(p => ({ px: p.x, py: p.y }));
+    }
+
+    const resultPoints: { px: number; py: number }[] = [];
+    const cumLengths: number[] = [0];
+    let totalLength = 0;
+
+    // Ensure points are unique to avoid zero-length segments
+    const uniquePoints = [points[0]];
+    for (let i = 1; i < points.length; i++) {
+        const p = points[i];
+        const prev = uniquePoints[uniquePoints.length - 1];
+        if (Math.abs(p.x - prev.x) > 0.001 || Math.abs(p.y - prev.y) > 0.001) {
+            uniquePoints.push(p);
+        }
+    }
+
+    if (uniquePoints.length < 2) {
+        return uniquePoints.map(p => ({ px: p.x, py: p.y }));
+    }
+
+    // Calculate lengths
+    for (let i = 1; i < uniquePoints.length; i++) {
+        const dx = uniquePoints[i].x - uniquePoints[i - 1].x;
+        const dy = uniquePoints[i].y - uniquePoints[i - 1].y;
+        const dist = Math.sqrt(dx * dx + dy * dy);
+        totalLength += dist;
+        cumLengths.push(totalLength);
+    }
+
+    const stepLength = totalLength / (count - 1);
+
+    resultPoints.push({ px: uniquePoints[0].x, py: uniquePoints[0].y });
+
+    let idx = 0; // Segment index
+
+    for (let i = 1; i < count - 1; i++) {
+        const currentTarget = i * stepLength;
+
+        // Find segment
+        while (idx < cumLengths.length - 2 && currentTarget > cumLengths[idx + 1]) {
+            idx++;
+        }
+
+        const segStartDist = cumLengths[idx];
+        const segEndDist = cumLengths[idx + 1];
+        const segLen = segEndDist - segStartDist;
+
+        let t = 0;
+        if (segLen > 0.000001) {
+            t = (currentTarget - segStartDist) / segLen;
+        }
+        t = Math.max(0, Math.min(1, t));
+
+        const p0 = uniquePoints[idx];
+        const p1 = uniquePoints[idx + 1];
+
+        resultPoints.push({
+            px: p0.x + (p1.x - p0.x) * t,
+            py: p0.y + (p1.y - p0.y) * t
+        });
+    }
+
+    const lastP = uniquePoints[uniquePoints.length - 1];
+    resultPoints.push({ px: lastP.x, py: lastP.y });
+
+    return resultPoints;
+};

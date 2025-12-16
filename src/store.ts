@@ -22,6 +22,8 @@ export interface ModalState {
   onCancel?: () => void;
 }
 
+
+
 interface Workspace {
   id: string; // Unique ID for the workspace
   name: string; // Tab Name
@@ -514,9 +516,39 @@ export const useStore = create<StoreState>((set, get) => ({
   setXAxisName: (name) => set(state => updateActiveWorkspace(state, () => ({ xAxisName: name }))),
   setXAxisPoint: () => { },
 
-  toggleXAxisLog: () => set(state => updateActiveWorkspace(state, (ws) => ({
-    xAxis: { ...ws.xAxis, isLog: !ws.xAxis.isLog }
-  }))),
+  toggleXAxisLog: () => set(state => updateActiveWorkspace(state, (ws) => {
+    const newIsLog = !ws.xAxis.isLog;
+    const newXAxis = { ...ws.xAxis, isLog: newIsLog };
+
+    // If fully calibrated, recalculate params and points
+    if (newXAxis.p1 && newXAxis.p2) {
+      try {
+        const { slope, intercept } = calculateCalibration(
+          newXAxis.p1.px, newXAxis.p1.val,
+          newXAxis.p2.px, newXAxis.p2.val,
+          newXAxis.isLog
+        );
+        newXAxis.slope = slope;
+        newXAxis.intercept = intercept;
+
+        // Recalculate all points
+        const updatedSeries = ws.series.map(s => {
+          const yAxis = ws.yAxes.find(y => y.id === s.yAxisId)?.calibration;
+          const updatedPoints = s.points.map(pt => {
+            const coords = pixelToData(pt.x, pt.y, newXAxis, yAxis || { ...initialAxis });
+            return coords ? { ...pt, dataX: coords.x, dataY: coords.y } : pt;
+          });
+          return updateSeriesFit({ ...s, points: updatedPoints });
+        });
+
+        return { xAxis: newXAxis, series: updatedSeries };
+      } catch (e) {
+        console.error("Failed to recalculate X calibration on toggle", e);
+        return { xAxis: newXAxis };
+      }
+    }
+    return { xAxis: newXAxis };
+  })),
 
   addYAxis: () => set(state => updateActiveWorkspace(state, (ws) => {
     const id = uuidv4();
@@ -555,13 +587,47 @@ export const useStore = create<StoreState>((set, get) => ({
 
   toggleYAxisLog: (axisId) => set(state => updateActiveWorkspace(state, (ws) => {
     const targetId = axisId || ws.activeYAxisId;
-    return {
-      yAxes: ws.yAxes.map(axis =>
-        axis.id === targetId
-          ? { ...axis, calibration: { ...axis.calibration, isLog: !axis.calibration.isLog } }
-          : axis
-      ),
-    };
+
+    // 1. Update the axis
+    const updatedYAxes = ws.yAxes.map(axis => {
+      if (axis.id !== targetId) return axis;
+
+      const newIsLog = !axis.calibration.isLog;
+      const newCal = { ...axis.calibration, isLog: newIsLog };
+
+      if (newCal.p1 && newCal.p2) {
+        try {
+          const { slope, intercept } = calculateCalibration(
+            newCal.p1.py, newCal.p1.val,
+            newCal.p2.py, newCal.p2.val,
+            newCal.isLog
+          );
+          newCal.slope = slope;
+          newCal.intercept = intercept;
+        } catch (e) {
+          console.error("Failed to recalculate Y calibration on toggle", e);
+        }
+      }
+      return { ...axis, calibration: newCal };
+    });
+
+    // 2. Recalculate points for series using this axis
+    const changedAxis = updatedYAxes.find(a => a.id === targetId);
+    if (!changedAxis || !changedAxis.calibration.p1 || !changedAxis.calibration.p2) {
+      return { yAxes: updatedYAxes };
+    }
+
+    const updatedSeries = ws.series.map(s => {
+      if (s.yAxisId !== targetId) return s;
+
+      const updatedPoints = s.points.map(pt => {
+        const coords = pixelToData(pt.x, pt.y, ws.xAxis, changedAxis.calibration);
+        return coords ? { ...pt, dataX: coords.x, dataY: coords.y } : pt;
+      });
+      return updateSeriesFit({ ...s, points: updatedPoints });
+    });
+
+    return { yAxes: updatedYAxes, series: updatedSeries };
   })),
 
   addSeries: () => set(state => updateActiveWorkspace(state, (ws) => {

@@ -203,6 +203,7 @@ export default function App() {
     link.click();
     document.body.removeChild(link);
 
+
     // Feedback
     setSaveSuccess(true);
     setTimeout(() => setSaveSuccess(false), 2000);
@@ -273,25 +274,15 @@ export default function App() {
         const ws = state.workspaces.find(w => w.id === state.activeWorkspaceId);
         if (!ws) return;
 
-        if (ws.mode !== 'IDLE' && ws.mode !== 'DIGITIZE') {
-          // Cancel current action mode
-          // Check if we can fall back to DIGITIZE (if calibrated)
-          // We'll trust the simple heuristic or just default to IDLE/DIGITIZE logic
+        // 1. Priority: Clear Point Selection
+        if (ws.selectedPointIds.length > 0) {
+          state.clearSelection();
+          return;
+        }
 
-          // Re-eval calibration status quickly
-          const activeY = ws.yAxes.find(y => y.id === ws.activeYAxisId);
-          const isCal = ws.xAxis.slope !== null && activeY?.calibration.slope !== null;
-
-          setMode(isCal ? 'DIGITIZE' : 'IDLE');
-        } else {
-          // Clear selection if in normal mode
-          if (ws.selectedPointIds.length > 0) {
-            // We need to call clearSelection from the hook which is bound
-            // BUT clearSelection is also in state actions if we want to use that 
-            // cleanSelection might not be exposed on state object directly? 
-            // It is defined in store.ts interface.
-            state.clearSelection();
-          }
+        // 2. Priority: Cancel any active mode (including Digitize) -> Return to IDLE
+        if (ws.mode !== 'IDLE') {
+          setMode('IDLE');
         }
       }
     };
@@ -388,11 +379,10 @@ export default function App() {
                 onClick={handleSaveProject}
                 title="Save current project to a JSON file"
                 className={`flex items-center justify-center gap-2 px-3 py-2 rounded-lg border transition-all active:scale-95 hover:shadow-sm text-xs font-medium animate-pop duration-200 ${saveSuccess
-                  ? 'bg-emerald-50 dark:bg-emerald-900/20 border-emerald-200 dark:border-emerald-800 text-emerald-600 dark:text-emerald-400'
-                  : 'border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400 hover:text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-900/20'
-                  }`}
+                  ? 'border-emerald-500 text-emerald-600 bg-emerald-50 dark:bg-emerald-900/20 dark:text-emerald-400'
+                  : 'border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400 hover:text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-900/20'}`}
               >
-                {saveSuccess ? <div className="animate-scale-in"><Check className="h-4 w-4" /></div> : <Save className="h-4 w-4" />}
+                {saveSuccess ? <Check className="h-4 w-4" /> : <Save className="h-4 w-4" />}
                 {saveSuccess ? 'Saved!' : 'Save Project'}
               </button>
               <label className="flex items-center justify-center gap-2 px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400 hover:text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-900/20 transition-all active:scale-95 hover:shadow-sm text-xs font-medium cursor-pointer" title="Load a previously saved project JSON file">
@@ -424,7 +414,7 @@ export default function App() {
               <button
                 onClick={loadTestImage}
                 title="Load Test Image"
-                className="px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-700 text-slate-500 dark:text-slate-400 hover:text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-900/20 transition"
+                className="px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-700 text-slate-500 dark:text-slate-400 hover:text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-900/20 transition-all active:scale-95"
               >
                 <Database className="h-4 w-4" />
               </button>
@@ -438,7 +428,7 @@ export default function App() {
               <div className="flex items-center gap-2">
                 <button
                   onClick={() => autoDetectAxes()}
-                  className="text-[10px] font-bold text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/20 px-2 py-0.5 rounded border border-blue-200 dark:border-blue-800 hover:bg-blue-100 dark:hover:bg-blue-900/40 transition-colors"
+                  className="text-[10px] font-bold text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/20 px-2 py-0.5 rounded border border-blue-200 dark:border-blue-800 hover:bg-blue-100 dark:hover:bg-blue-900/40 transition-all active:scale-95"
                   title="Auto-detect axes from image"
                 >
                   Auto
@@ -587,9 +577,9 @@ export default function App() {
                           <button
                             onClick={(e) => { e.stopPropagation(); deleteYAxis(y.id); }}
                             title="Delete this Y axis"
-                            className="p-1 rounded text-slate-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 transition"
+                            className="p-1 rounded text-slate-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 transition-all active:scale-95 group"
                           >
-                            <Trash2 className="h-3.5 w-3.5" />
+                            <Trash2 className="h-3.5 w-3.5 transition-transform group-hover:rotate-12 group-hover:scale-110" />
                           </button>
                         )}
                       </div>
@@ -619,9 +609,9 @@ export default function App() {
                               startCalibration('Y', y.id);
                             }}
                             title={`Recalibrate ${y.name}`}
-                            className="flex-1 flex items-center justify-center gap-1 rounded-lg bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400 hover:bg-blue-100 dark:hover:bg-blue-900/30 border border-blue-200 dark:border-blue-800 transition"
+                            className="flex-1 flex items-center justify-center gap-1 rounded-lg bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400 hover:bg-blue-100 dark:hover:bg-blue-900/30 border border-blue-200 dark:border-blue-800 transition group"
                           >
-                            <RefreshCw className="h-3.5 w-3.5" />
+                            <RefreshCw className="h-3.5 w-3.5 transition-transform group-hover:rotate-180 duration-500" />
                           </button>
                         </div>
                       ) : (
@@ -654,9 +644,9 @@ export default function App() {
               <button
                 onClick={addSeries}
                 title="Create a new data series"
-                className="p-1 rounded hover:bg-slate-100 dark:hover:bg-slate-800 text-blue-600 dark:text-blue-400 transition"
+                className="p-1 rounded hover:bg-slate-100 dark:hover:bg-slate-800 text-blue-600 dark:text-blue-400 transition group"
               >
-                <Plus className="h-4 w-4" />
+                <Plus className="h-4 w-4 transition-transform group-hover:rotate-90 type-spring" />
               </button>
             </div>
 
@@ -712,10 +702,10 @@ export default function App() {
                         onConfirm: () => clearSeriesPoints(activeSeriesId)
                       });
                     }}
-                    className="p-1.5 rounded-lg text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 transition border border-transparent hover:border-red-200 dark:hover:border-red-800"
+                    className="p-1.5 rounded-lg text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 transition-all border border-transparent hover:border-red-200 dark:hover:border-red-800 active:scale-95 group"
                     title="Clear Series Points"
                   >
-                    <Trash2 className="h-4 w-4" />
+                    <Trash2 className="h-4 w-4 transition-transform group-hover:rotate-12 group-hover:scale-110" />
                   </button>
                 </div>
 
@@ -951,7 +941,7 @@ export default function App() {
                   : isCalibrated && activeSeries && activeSeries.points.length >= 2
                     ? 'bg-indigo-50 dark:bg-indigo-900/20 text-indigo-700 dark:text-indigo-400 hover:bg-indigo-100 dark:hover:bg-indigo-900/30 ring-1 ring-inset ring-indigo-600/20'
                     : 'bg-slate-100 dark:bg-slate-800 text-slate-400 cursor-not-allowed'
-                  }`}
+                  } transition-all active:scale-95`}
               >
                 <Activity className="h-4 w-4" />
                 Resample
@@ -969,22 +959,22 @@ export default function App() {
                   onClick={() => setIsSnappingToolOpen(true)}
                   disabled={series.reduce((acc, s) => acc + s.points.length, 0) === 0}
                   title="Snap Points to Value"
-                  className="p-1 rounded hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-500 dark:text-slate-400 disabled:opacity-50 disabled:cursor-not-allowed transition"
+                  className="p-1 rounded hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-500 dark:text-slate-400 disabled:opacity-50 disabled:cursor-not-allowed transition-all active:scale-95 group"
                 >
-                  <Magnet className="h-3.5 w-3.5" />
+                  <Magnet className="h-3.5 w-3.5 transition-transform group-hover:scale-110 group-hover:-rotate-12" />
                 </button>
                 {/* Export Mini Buttons */}
                 <button
-                  onClick={() => handleExportImage(false)}
-                  title="Export Snapshot"
-                  className={`p-1 rounded hover:bg-slate-100 dark:hover:bg-slate-800 transition ${exportSuccess ? 'text-emerald-500' : 'text-slate-500 dark:text-slate-400'}`}
+                  onClick={() => handleExportImage()}
+                  title="Export Plot Image"
+                  className={`p-1 rounded hover:bg-slate-100 dark:hover:bg-slate-800 transition-all active:scale-95 ${exportSuccess ? 'text-emerald-500' : 'text-slate-500 dark:text-slate-400'}`}
                 >
                   {exportSuccess ? <div className="animate-scale-in"><Check className="h-3.5 w-3.5" /></div> : <Camera className="h-3.5 w-3.5" />}
                 </button>
                 <button
                   onClick={() => handleExportImage(true)}
                   title="Export Graphics Only"
-                  className={`p-1 rounded hover:bg-slate-100 dark:hover:bg-slate-800 transition ${exportGraphicsSuccess ? 'text-emerald-500' : 'text-slate-500 dark:text-slate-400'}`}
+                  className={`p-1 rounded hover:bg-slate-100 dark:hover:bg-slate-800 transition-all active:scale-95 ${exportGraphicsSuccess ? 'text-emerald-500' : 'text-slate-500 dark:text-slate-400'}`}
                 >
                   {exportGraphicsSuccess ? <div className="animate-scale-in"><Check className="h-3.5 w-3.5" /></div> : <ImageOff className="h-3.5 w-3.5" />}
                 </button>
@@ -996,7 +986,7 @@ export default function App() {
                     setTimeout(() => setCopySuccess(false), 2000);
                   }}
                   title="Copy to Clipboard"
-                  className={`p-1 rounded hover:bg-slate-100 dark:hover:bg-slate-800 transition ${copySuccess ? 'text-emerald-500' : 'text-slate-500 dark:text-slate-400'}`}
+                  className={`p-1 rounded hover:bg-slate-100 dark:hover:bg-slate-800 transition-all active:scale-95 ${copySuccess ? 'text-emerald-500' : 'text-slate-500 dark:text-slate-400'}`}
                 >
                   {copySuccess ? <div className="animate-scale-in"><Check className="h-3.5 w-3.5" /></div> : <Copy className="h-3.5 w-3.5" />}
                 </button>
@@ -1006,7 +996,7 @@ export default function App() {
                     downloadCSV(csv, 'digitized_data.csv');
                   }}
                   title="Export CSV"
-                  className="p-1 rounded hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-500 dark:text-slate-400 transition"
+                  className="p-1 rounded hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-500 dark:text-slate-400 transition-all active:scale-95"
                 >
                   <Download className="h-3.5 w-3.5" />
                 </button>
@@ -1144,19 +1134,19 @@ export default function App() {
                         e.stopPropagation();
                         openModal({ type: 'confirm', message: "Close this workspace? Unsaved changes will be lost.", onConfirm: () => removeWorkspace(ws.id) });
                       }}
-                      className="opacity-0 group-hover:opacity-100 p-0.5 rounded-full hover:bg-red-100 dark:hover:bg-red-900/30 text-slate-400 hover:text-red-500 transition"
+                      className="opacity-0 group-hover:opacity-100 p-0.5 rounded-full hover:bg-red-100 dark:hover:bg-red-900/30 text-slate-400 hover:text-red-500 transition group/close"
                     >
-                      <X className="h-3 w-3" />
+                      <X className="h-3 w-3 transition-transform group-hover/close:rotate-90" />
                     </button>
                   )}
                 </div>
               ))}
               <button
                 onClick={addWorkspace}
-                className="p-1.5 rounded-md hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-400 hover:text-blue-500 transition shrink-0"
+                className="p-1.5 rounded-md hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-400 hover:text-blue-500 transition shrink-0 group"
                 title="New Workspace"
               >
-                <Plus className="h-3.5 w-3.5" />
+                <Plus className="h-3.5 w-3.5 transition-transform group-hover:rotate-90 type-spring" />
               </button>
             </div>
 
@@ -1164,10 +1154,10 @@ export default function App() {
 
             <button
               onClick={() => setIsHelpOpen(true)}
-              className="p-1.5 rounded-md text-slate-500 hover:text-blue-600 dark:text-slate-400 dark:hover:text-blue-400 hover:bg-slate-200 dark:hover:bg-slate-700 transition"
+              className="p-1.5 rounded-md text-slate-500 hover:text-blue-600 dark:text-slate-400 dark:hover:text-blue-400 hover:bg-slate-200 dark:hover:bg-slate-700 transition group"
               title="Help & Information"
             >
-              <HelpCircle className="w-4 h-4" />
+              <HelpCircle className="w-4 h-4 transition-transform group-hover:scale-110 group-hover:rotate-12" />
             </button>
           </div>
 

@@ -1,132 +1,50 @@
 import React, { useEffect, useRef, useState, useImperativeHandle, forwardRef } from 'react';
 import type { KonvaEventObject } from 'konva/lib/Node';
 import type { Stage as KonvaStage } from 'konva/lib/Stage';
+import Konva from 'konva';
 import { Circle, Group, Image as KonvaImage, Line as KonvaLine, Layer, Stage, Text, Label, Tag, Rect, Path } from 'react-konva';
 import useImage from 'use-image';
 import { CalibrationInput } from './components/CalibrationInput';
 import { WandVariationModal } from './components/WandVariationModal';
-import { traceLine } from './utils/trace';
+import { traceLine, resamplePoints, simplifyRDP } from './utils/trace'; // Fixed import to include simplifyRDP
 import { pixelToData } from './utils/math';
 import { useStore } from './store';
+import { CalibrationHandle } from './components/CalibrationHandle';
+import { Magnifier } from './components/Magnifier';
 
-interface CalibrationHandleProps {
-  x: number;
-  y: number;
-  label: string;
-  color: string;
-  axisType: 'X' | 'Y';
-  axisId: string | null;
-  pointIndex: 1 | 2;
-  scale: number;
-  xAxis: any;
-  yAxes: any[];
-}
+// Animated Components
+const AnimatedCircle = (props: React.ComponentProps<typeof Circle>) => {
+  const ref = useRef<any>(null);
+  useEffect(() => {
+    const node = ref.current;
+    if (node) {
+      node.scale({ x: 0, y: 0 });
+      node.to({
+        scaleX: 1,
+        scaleY: 1,
+        duration: 0.4,
+        easing: Konva.Easings.BackEaseOut,
+      });
+    }
+  }, []);
+  return <Circle ref={ref} {...props} />;
+};
 
-const CalibrationHandle: React.FC<CalibrationHandleProps> = ({ x, y, label, color, axisType, axisId, pointIndex, scale, xAxis, yAxes }) => {
-  const { updateCalibrationPointPosition, setPendingCalibrationPoint } = useStore();
-  const size = 12 / scale; // Slightly larger for better visibility
-  const strokeWidth = 2 / scale;
-
-  return (
-    <Group
-      x={x}
-      y={y}
-      draggable
-      dragBoundFunc={function (this: any, pos) {
-        const stage = this.getStage();
-        if (!stage) return pos;
-
-        // Transform absolute position to local (logical) position
-        const transform = stage.getAbsoluteTransform().copy();
-        const inverted = transform.copy().invert();
-        const localPos = inverted.point(pos);
-
-        let newX = localPos.x;
-        let newY = localPos.y;
-        const SNAP_THRESHOLD = 20 / scale; // generous threshold
-
-        // candidates for snapping
-        const targets: { x?: number, y?: number }[] = [];
-
-        // 1. Check X Axis Points
-        if (xAxis.p1 && !(axisType === 'X' && pointIndex === 1)) {
-          targets.push({ x: xAxis.p1.px, y: xAxis.p1.py });
-        }
-        if (xAxis.p2 && !(axisType === 'X' && pointIndex === 2)) {
-          targets.push({ x: xAxis.p2.px, y: xAxis.p2.py });
-        }
-
-        // 2. Check Y Axis Points (all Y axes)
-        yAxes.forEach((ax: any) => {
-          if (ax.calibration.p1) {
-            const isSelf = axisType === 'Y' && ax.id === axisId && pointIndex === 1;
-            if (!isSelf) targets.push({ x: ax.calibration.p1.px, y: ax.calibration.p1.py });
-          }
-          if (ax.calibration.p2) {
-            const isSelf = axisType === 'Y' && ax.id === axisId && pointIndex === 2;
-            if (!isSelf) targets.push({ x: ax.calibration.p2.px, y: ax.calibration.p2.py });
-          }
-        });
-
-        for (const t of targets) {
-          if (t.x !== undefined) {
-            if (Math.abs(t.x - newX) < SNAP_THRESHOLD) {
-              newX = t.x;
-            }
-          }
-          if (t.y !== undefined) {
-            if (Math.abs(t.y - newY) < SNAP_THRESHOLD) {
-              newY = t.y;
-            }
-          }
-        }
-
-        // Convert back to absolute position
-        return transform.point({ x: newX, y: newY });
-      }}
-      onDragEnd={(e) => {
-        updateCalibrationPointPosition(axisType, axisId, pointIndex, e.target.x(), e.target.y());
-      }}
-      onClick={(e) => {
-        // Prevent stage click
-        e.cancelBubble = true;
-        setPendingCalibrationPoint({
-          axis: axisType,
-          step: pointIndex,
-          px: x,
-          py: y
-        });
-      }}
-      onMouseEnter={(e) => {
-        const container = e.target.getStage()?.container();
-        if (container) container.style.cursor = 'pointer';
-      }}
-      onMouseLeave={(e) => {
-        const container = e.target.getStage()?.container();
-        if (container) container.style.cursor = 'default';
-      }}
-    >
-      <Rect
-        width={size}
-        height={size}
-        offsetX={size / 2}
-        offsetY={size / 2}
-        fill={color}
-        stroke="white"
-        strokeWidth={strokeWidth}
-        shadowColor="black"
-        shadowBlur={2 / scale}
-        shadowOpacity={0.3}
-      />
-      <Text
-        text={label}
-        fill={color}
-        fontSize={12 / scale}
-        y={size / 2 + 3 / scale}
-        x={-size} // visual tweak
-      />
-    </Group>
-  );
+const AnimatedGroup = (props: React.ComponentProps<typeof Group>) => {
+  const ref = useRef<any>(null);
+  useEffect(() => {
+    const node = ref.current;
+    if (node) {
+      node.scale({ x: 0, y: 0 });
+      node.to({
+        scaleX: 1,
+        scaleY: 1,
+        duration: 0.4,
+        easing: Konva.Easings.BackEaseOut,
+      });
+    }
+  }, []);
+  return <Group ref={ref} {...props} />;
 };
 
 export interface DigitizerHandle {
@@ -176,7 +94,7 @@ export const DigitizerCanvas = forwardRef<DigitizerHandle, DigitizerCanvasProps>
     }, []);
 
     const [currentScale, setCurrentScale] = useState(1);
-    const [calibStep, setCalibStep] = useState<1 | 2>(1);
+    // Removed local calibStep state in favor of derived state below
     const [snapPoint, setSnapPoint] = useState<{ x: number; y: number } | null>(null);
 
     // Selection State
@@ -284,171 +202,27 @@ export const DigitizerCanvas = forwardRef<DigitizerHandle, DigitizerCanvasProps>
     // Active Y Axis (for calibration display)
     const activeYAxisDef = yAxes.find(y => y.id === activeYAxisId);
 
+    // Derived Calibration Step
+    let calibStep = 1;
+    if (mode === 'CALIBRATE_X') {
+      calibStep = !xAxis.p1 ? 1 : 2;
+    } else if (mode === 'CALIBRATE_Y') {
+      const yAxis = activeYAxisDef; // already derived above
+      calibStep = (yAxis && !yAxis.calibration.p1) ? 1 : 2;
+    }
 
-    useEffect(() => {
-      setCalibStep(1);
-    }, [mode]);
-
-    // --- MAGNIFIER (Start from scratch) ---
-
-    // State
+    // --- MAGNIFIER STATE ---
     const [magPos, setMagPos] = useState({ x: -9999, y: -9999 }); // init offscreen
     const [magSize, setMagSize] = useState({ width: 220, height: 220 });
     const [magnifierZoom, setMagnifierZoom] = useState(2);
-    const magnifierDivRef = useRef<HTMLDivElement>(null);
-    const magnifierCanvasRef = useRef<HTMLCanvasElement>(null);
     const zoomFactors = [2, 4, 8];
 
-    // Interaction Refs
-    const magDragRef = useRef<{ startX: number, startY: number, initPos: { x: number, y: number } } | null>(null);
-    const magResizeRef = useRef<{ startX: number, startY: number, initSize: { width: number, height: number } } | null>(null);
-
-    // Initial Placement
+    // Initial Placement for Magnifier
     useEffect(() => {
       if (stageSize.width > 0 && magPos.x === -9999) {
         setMagPos({ x: stageSize.width - 240, y: 20 });
       }
     }, [stageSize.width, magPos.x]);
-
-    // Update Loop (The Lens Effect)
-    const updateMagnifier = React.useCallback(() => {
-      if (!imageUrl || !magnifierCanvasRef.current || !stageRef.current) return;
-
-      const stage = stageRef.current;
-      const pointer = stage.getPointerPosition();
-
-      // If mouse is outside stage, do not update (or show blank)
-      if (!pointer) return;
-
-      const canvas = magnifierCanvasRef.current;
-      const ctx = canvas.getContext('2d');
-      if (!ctx) return;
-
-      const layers = stage.getChildren(); // Get all Konva Layers
-
-      const pixelRatio = window.devicePixelRatio || 1;
-      const width = magSize.width;
-      const height = magSize.height;
-      const zoom = magnifierZoom;
-
-      // Ensure Canvas Buffer Size matches display size * pixelRatio
-      if (canvas.width !== width * pixelRatio) canvas.width = width * pixelRatio;
-      if (canvas.height !== height * pixelRatio) canvas.height = height * pixelRatio;
-
-      // 1. Clear
-      ctx.clearRect(0, 0, canvas.width, canvas.height);
-      ctx.fillStyle = '#ffffff';
-      ctx.fillRect(0, 0, canvas.width, canvas.height);
-
-      // 2. define "Source" region logic (The Lens)
-      // We want to magnify the pixels where the MOUSE CURSOR is.
-      const cx = pointer.x;
-      const cy = pointer.y;
-
-      // Visual region to capture (smaller than mag window because we are zooming in)
-      const srcW = width / zoom;
-      const srcH = height / zoom;
-      const srcX = cx - srcW / 2;
-      const srcY = cy - srcH / 2;
-
-      // 3. Draw Layers
-      // Konva layers are backed by native canvases that map 1:1 to the Stage container (usually)
-      layers.forEach((layer: any) => {
-        if (!layer.isVisible()) return;
-        const nativeCanvas = layer.getCanvas()._canvas;
-
-        // Draw cropped region from layer -> magnifier
-        // Important: Konva back-buffer is scaled by pixelRatio
-        ctx.drawImage(
-          nativeCanvas,
-          srcX * pixelRatio,
-          srcY * pixelRatio,
-          srcW * pixelRatio,
-          srcH * pixelRatio,
-          0, 0,
-          width * pixelRatio,
-          height * pixelRatio
-        );
-      });
-
-      // 4. Draw Crosshair (Reticle)
-      ctx.save();
-      ctx.scale(pixelRatio, pixelRatio);
-      ctx.strokeStyle = 'rgba(255, 0, 0, 0.5)';
-      ctx.lineWidth = 1;
-
-      ctx.beginPath();
-      ctx.moveTo(width / 2, 0); ctx.lineTo(width / 2, height);
-      ctx.moveTo(0, height / 2); ctx.lineTo(width, height / 2);
-      ctx.stroke();
-
-      ctx.restore();
-
-    }, [imageUrl, magPos, magSize, magnifierZoom]);
-
-    // Animation Loop
-    React.useLayoutEffect(() => {
-      let animId: number;
-      const loop = () => {
-        updateMagnifier();
-        animId = requestAnimationFrame(loop);
-      };
-      animId = requestAnimationFrame(loop);
-      return () => cancelAnimationFrame(animId);
-    }, [updateMagnifier]);
-
-
-    // Global Event Handlers for Drag/Resize
-    useEffect(() => {
-      const handleMove = (e: MouseEvent) => {
-        if (magDragRef.current && containerRef.current) {
-          // Dragging Logic
-          const dx = e.clientX - magDragRef.current.startX;
-          const dy = e.clientY - magDragRef.current.startY;
-
-          const box = containerRef.current.getBoundingClientRect();
-
-          let nx = magDragRef.current.initPos.x + dx;
-          let ny = magDragRef.current.initPos.y + dy;
-
-          // Clamp
-          nx = Math.max(0, Math.min(nx, box.width - magSize.width));
-          ny = Math.max(0, Math.min(ny, box.height - magSize.height));
-
-          setMagPos({ x: nx, y: ny });
-        }
-
-        if (magResizeRef.current) {
-          // Resize Logic
-          const dx = e.clientX - magResizeRef.current.startX;
-          const dy = e.clientY - magResizeRef.current.startY;
-
-          const nw = Math.max(150, magResizeRef.current.initSize.width + dx);
-          const nh = Math.max(150, magResizeRef.current.initSize.height + dy);
-          setMagSize({ width: nw, height: nh });
-        }
-      };
-
-      const handleUp = () => {
-        magDragRef.current = null;
-        magResizeRef.current = null;
-        document.body.style.cursor = '';
-      };
-
-      window.addEventListener('mousemove', handleMove);
-      window.addEventListener('mouseup', handleUp);
-      return () => {
-        window.removeEventListener('mousemove', handleMove);
-        window.removeEventListener('mouseup', handleUp);
-      };
-    }, [magSize]); // Re-bind if size changes (for clamping) - acceptable overhead
-
-    const cycleZoom = () => {
-      setMagnifierZoom(z => {
-        const idx = zoomFactors.indexOf(z);
-        return zoomFactors[(idx + 1) % zoomFactors.length];
-      });
-    };
 
 
     const handleStageMouseMove = (e: KonvaEventObject<MouseEvent>) => {
@@ -514,9 +288,6 @@ export const DigitizerCanvas = forwardRef<DigitizerHandle, DigitizerCanvasProps>
           }
 
           // 2. Line Snapping (Crosshairs from P1)
-          // Only if we haven't snapped to a point yet (or maybe we should check if line snap is closer?)
-          // Let's refine: If we found a point snap, that's usually the best.
-          // But if not, check lines.
           if (!closest) {
             let p1: { px: number; py: number } | null = null;
             if (mode === 'CALIBRATE_X') {
@@ -549,9 +320,6 @@ export const DigitizerCanvas = forwardRef<DigitizerHandle, DigitizerCanvasProps>
       } else {
         if (snapPoint) setSnapPoint(null);
       }
-
-      // Update Magnifier Content & Position
-      // drawMagnifier(); // Handled by useEffect dependent on magPos
     };
 
     const finishTrace = (tracedPoints: { x: number; y: number }[]) => {
@@ -569,130 +337,11 @@ export const DigitizerCanvas = forwardRef<DigitizerHandle, DigitizerCanvasProps>
 
           const { addPoints } = useStore.getState();
 
-          const resultPoints: { px: number; py: number }[] = [];
-
-          // Pre-process: Simplify the traced path using Ramer-Douglas-Peucker (RDP)
-          // This removes noise and 'hooks' that cause duplicate points during resampling
-          const simplifyRDP = (points: { x: number, y: number }[], epsilon: number): { x: number, y: number }[] => {
-            if (points.length < 3) return points;
-
-            let dmax = 0;
-            let index = 0;
-            const end = points.length - 1;
-
-            for (let i = 1; i < end; i++) {
-              // Perpendicular distance from point[i] to line segment [0, end]
-              // Area = |0.5 * (x1(y2-y3) + x2(y3-y1) + x3(y1-y2))|
-              // Height = 2 * Area / Base
-
-              const x1 = points[0].x, y1 = points[0].y;
-              const x2 = points[end].x, y2 = points[end].y;
-              const x0 = points[i].x, y0 = points[i].y;
-
-              // distance check
-              // If p1 == p2, dist is distance to p1
-              let d = 0;
-              const dx = x2 - x1;
-              const dy = y2 - y1;
-              if (dx === 0 && dy === 0) {
-                d = Math.sqrt((x0 - x1) ** 2 + (y0 - y1) ** 2);
-              } else {
-                const num = Math.abs(dy * x0 - dx * y0 + x2 * y1 - y2 * x1);
-                const den = Math.sqrt(dx * dx + dy * dy);
-                d = num / den;
-              }
-
-              if (d > dmax) {
-                index = i;
-                dmax = d;
-              }
-            }
-
-            if (dmax > epsilon) {
-              const recResults1 = simplifyRDP(points.slice(0, index + 1), epsilon);
-              const recResults2 = simplifyRDP(points.slice(index), epsilon);
-              // Result 1 ends with index, Result 2 starts with index. Don't duplicate.
-              return [...recResults1.slice(0, -1), ...recResults2];
-            } else {
-              return [points[0], points[end]];
-            }
-          };
-
           const simplifiedPoints = tracedPoints.length > 2
-            ? simplifyRDP(tracedPoints, 2.0) // Epsilon 2.0 pixels
+            ? simplifyRDP(tracedPoints, 2.0)
             : tracedPoints;
 
-          // Strict resampling to desired count (Interpolation)
-          if (simplifiedPoints.length < 2 || desiredCount < 2) {
-            tracedPoints.forEach(p => resultPoints.push({ px: p.x, py: p.y }));
-          } else {
-            const cumLengths: number[] = [0];
-            let totalLength = 0;
-
-            // Ensure simplifiedPoints are unique to avoid zero-length segments
-            const uniquePoints = [simplifiedPoints[0]];
-            for (let i = 1; i < simplifiedPoints.length; i++) {
-              const p = simplifiedPoints[i];
-              const prev = uniquePoints[uniquePoints.length - 1];
-              if (Math.abs(p.x - prev.x) > 0.001 || Math.abs(p.y - prev.y) > 0.001) {
-                uniquePoints.push(p);
-              }
-            }
-
-            // Calculate lengths
-            for (let i = 1; i < uniquePoints.length; i++) {
-              const dx = uniquePoints[i].x - uniquePoints[i - 1].x;
-              const dy = uniquePoints[i].y - uniquePoints[i - 1].y;
-              const dist = Math.sqrt(dx * dx + dy * dy);
-              totalLength += dist;
-              cumLengths.push(totalLength);
-            }
-
-            // Force step to be exact based on desired count
-            const stepLength = totalLength / (desiredCount - 1);
-
-            resultPoints.push({ px: uniquePoints[0].x, py: uniquePoints[0].y });
-
-            // Start loop for intermediate points
-            let idx = 0; // Segment index
-
-            for (let i = 1; i < desiredCount - 1; i++) {
-              const currentTarget = i * stepLength;
-
-              // Find segment that contains currentTarget
-              // We need cumLengths[idx] <= currentTarget <= cumLengths[idx+1]
-              // Safe guard against idx overrunning
-              while (idx < cumLengths.length - 2 && currentTarget > cumLengths[idx + 1]) {
-                idx++;
-              }
-
-              const segStartDist = cumLengths[idx];
-              const segEndDist = cumLengths[idx + 1];
-              const segLen = segEndDist - segStartDist;
-
-              // Ratio within the segment
-              // t = (target - startDist) / (endDist - startDist)
-              let t = 0;
-              if (segLen > 0.000001) {
-                t = (currentTarget - segStartDist) / segLen;
-              }
-              // Clamp t [0, 1] to stay within segment
-              t = Math.max(0, Math.min(1, t));
-
-              const p0 = uniquePoints[idx];
-              const p1 = uniquePoints[idx + 1];
-
-              resultPoints.push({
-                px: p0.x + (p1.x - p0.x) * t,
-                py: p0.y + (p1.y - p0.y) * t
-              });
-            }
-
-            const lastP = uniquePoints[uniquePoints.length - 1];
-            resultPoints.push({ px: lastP.x, py: lastP.y });
-          }
-
-          // Add points
+          const resultPoints = resamplePoints(simplifiedPoints, desiredCount);
           addPoints(resultPoints);
         }
       });
@@ -858,65 +507,18 @@ export const DigitizerCanvas = forwardRef<DigitizerHandle, DigitizerCanvasProps>
         )}
 
         {/* Magnifier Overlay */}
-        {imageUrl && magPos.x > -5000 && (
-          <div
-            ref={magnifierDivRef}
-            className="absolute border-[3px] border-white ring-1 ring-slate-900/10 shadow-2xl z-20 rounded-xl overflow-hidden bg-white dark:bg-slate-800"
-            style={{
-              left: magPos.x,
-              top: magPos.y,
-              width: magSize.width,
-              height: magSize.height,
-              cursor: 'move',
-            }}
-            onMouseDown={(e) => {
-              if (e.target !== e.currentTarget) return;
-              magDragRef.current = {
-                startX: e.clientX,
-                startY: e.clientY,
-                initPos: { ...magPos }
-              };
-            }}
-          >
-            <canvas
-              ref={magnifierCanvasRef}
-              style={{
-                width: '100%',
-                height: '100%',
-                display: 'block',
-                pointerEvents: 'none'
-              }}
-            />
-
-            {/* Zoom label */}
-            <div
-              onClick={(e) => {
-                e.stopPropagation();
-                cycleZoom();
-              }}
-              className="absolute bottom-2 right-1/2 translate-x-1/2 bg-black/50 text-white text-[10px] px-2 py-0.5 rounded-full backdrop-blur-sm cursor-pointer hover:bg-black/70 select-none transition-colors"
-            >
-              {magnifierZoom}x
-            </div>
-
-            {/* Resize Handle */}
-            <div
-              className="absolute bottom-0 right-0 w-4 h-4 cursor-nwse-resize z-30"
-              style={{
-                background: 'linear-gradient(135deg, transparent 50%, rgba(0,0,0,0.2) 50%)'
-              }}
-              onMouseDown={(e) => {
-                e.stopPropagation();
-                magResizeRef.current = {
-                  startX: e.clientX,
-                  startY: e.clientY,
-                  initSize: { ...magSize }
-                };
-                document.body.style.cursor = 'nwse-resize';
-              }}
-            />
-          </div>
-        )}
+        <Magnifier
+          imageUrl={imageUrl}
+          stageRef={stageRef}
+          containerRef={containerRef}
+          magPos={magPos}
+          setMagPos={setMagPos}
+          magSize={magSize}
+          setMagSize={setMagSize}
+          magnifierZoom={magnifierZoom}
+          setMagnifierZoom={setMagnifierZoom}
+          zoomFactors={zoomFactors}
+        />
 
         <CalibrationInput />
 
@@ -1331,15 +933,16 @@ export const DigitizerCanvas = forwardRef<DigitizerHandle, DigitizerCanvasProps>
             {points.map((p) => {
               if (p.isSinglePoint) {
                 return (
-                  <Group
+
+                  <AnimatedGroup
                     key={p.id}
                     x={p.x}
                     y={p.y}
                     draggable
-                    onDragEnd={(e) => {
+                    onDragEnd={(e: any) => {
                       updatePointPosition(p.id, e.target.x(), e.target.y());
                     }}
-                    onClick={(e) => {
+                    onClick={(e: any) => {
                       e.cancelBubble = true;
                       if (mode === 'SELECT' || mode === 'DIGITIZE' || mode === 'SINGLE_POINT') {
                         togglePointSelection(p.id, e.evt.ctrlKey || e.evt.shiftKey);
@@ -1369,12 +972,13 @@ export const DigitizerCanvas = forwardRef<DigitizerHandle, DigitizerCanvasProps>
                         listening={false}
                       />
                     </Group>
-                  </Group>
+                  </AnimatedGroup>
                 );
               }
 
               return (
-                <Circle
+
+                <AnimatedCircle
                   key={p.id}
                   x={p.x}
                   y={p.y}
@@ -1383,10 +987,10 @@ export const DigitizerCanvas = forwardRef<DigitizerHandle, DigitizerCanvasProps>
                   stroke={p.selected ? '#3b82f6' : '#0f172a'}
                   strokeWidth={(p.selected ? 3 : 1) / currentScale}
                   draggable
-                  onDragEnd={(e) => {
+                  onDragEnd={(e: any) => {
                     updatePointPosition(p.id, e.target.x(), e.target.y());
                   }}
-                  onClick={(e) => {
+                  onClick={(e: any) => {
                     e.cancelBubble = true;
                     if (mode === 'SELECT' || mode === 'DIGITIZE' || mode === 'SINGLE_POINT') {
                       togglePointSelection(p.id, e.evt.ctrlKey || e.evt.shiftKey);
@@ -1394,6 +998,7 @@ export const DigitizerCanvas = forwardRef<DigitizerHandle, DigitizerCanvasProps>
                   }}
                 />
               );
+
             })}
 
             {/* Point Coordinate Labels */}
