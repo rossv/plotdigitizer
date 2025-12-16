@@ -40,6 +40,8 @@ export const PdfPageSelector: React.FC<PdfPageSelectorProps> = ({ pdfDocument, o
         return () => { active = false; };
     }, [pdfDocument, currentPage]);
 
+
+
     const handlePrev = () => {
         if (currentPage > 1) setCurrentPage(p => p - 1);
     };
@@ -60,6 +62,21 @@ export const PdfPageSelector: React.FC<PdfPageSelectorProps> = ({ pdfDocument, o
             setIsLoading(false);
         }
     };
+
+    // Global Key Listener
+    useEffect(() => {
+        const handleKeyDown = (e: KeyboardEvent) => {
+            if (e.key === 'Escape') {
+                e.preventDefault();
+                onCancel();
+            } else if (e.key === 'Enter') {
+                e.preventDefault();
+                handleImport();
+            }
+        };
+        window.addEventListener('keydown', handleKeyDown);
+        return () => window.removeEventListener('keydown', handleKeyDown);
+    }, [handleImport, onCancel]);
 
     return (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">

@@ -102,6 +102,18 @@ const changelogEntries = parseChangelog(changelogText);
 export const HelpModal: React.FC<HelpModalProps> = ({ isOpen, onClose }) => {
     const [activeTab, setActiveTab] = useState<'usage' | 'changelog' | 'about'>('usage');
 
+    // Global Key Listener
+    React.useEffect(() => {
+        if (!isOpen) return;
+        const handleKeyDown = (e: KeyboardEvent) => {
+            if (e.key === 'Escape') {
+                onClose();
+            }
+        };
+        window.addEventListener('keydown', handleKeyDown);
+        return () => window.removeEventListener('keydown', handleKeyDown);
+    }, [isOpen, onClose]);
+
     if (!isOpen) return null;
 
     return (

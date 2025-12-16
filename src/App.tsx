@@ -1,6 +1,6 @@
 
 import React, { useEffect, useRef } from 'react';
-import { Plus, ScanLine, Image as ImageIcon, Sun, Moon, Trash2, Download, Database, Undo, Redo, Camera, Copy, ImageOff, Save, FolderOpen, X, MousePointer2, Magnet, HelpCircle, MapPin, Check, CheckCircle2, Wand2, Sparkles, Activity } from 'lucide-react';
+import { Plus, ScanLine, Image as ImageIcon, Sun, Moon, Trash2, Download, Database, Undo, Redo, Camera, Copy, ImageOff, Save, FolderOpen, X, MousePointer2, Magnet, HelpCircle, MapPin, Check, CheckCircle2, Wand2, Sparkles, Activity, RefreshCw } from 'lucide-react';
 import { DigitizerCanvas } from './DigitizerCanvas';
 import type { DigitizerHandle } from './DigitizerCanvas';
 import { useStore } from './store';
@@ -11,6 +11,7 @@ import testPlotUrl from './assets/test_plot.svg';
 import { generateTableData, downloadCSV } from './utils/export';
 import { loadPdfDocument } from './utils/pdf-utils';
 import { PdfPageSelector } from './components/PdfPageSelector';
+import { HistoryList } from './components/HistoryList';
 import * as pdfjsLib from 'pdfjs-dist';
 import { useAutoAnimate } from '@formkit/auto-animate/react';
 
@@ -20,6 +21,7 @@ export default function App() {
   const [pdfDocument, setPdfDocument] = React.useState<pdfjsLib.PDFDocumentProxy | null>(null);
   const [isSnappingToolOpen, setIsSnappingToolOpen] = React.useState(false);
   const [isHelpOpen, setIsHelpOpen] = React.useState(false);
+  const [isHistoryOpen, setIsHistoryOpen] = React.useState(false);
   const [yAxesParent] = useAutoAnimate();
   const [seriesSettingsParent] = useAutoAnimate();
 
@@ -57,6 +59,7 @@ export default function App() {
     setSeriesFitConfig,
     undo,
     redo,
+    jumpToHistory,
     updateSeriesName,
     updateSeriesColor,
     clearSeriesPoints,
@@ -67,6 +70,8 @@ export default function App() {
     startCalibration,
     resampleActiveSeries,
     autoDetectAxes,
+    updateCalibrationPointValue,
+    snapSeriesToFit,
   } = useStore();
 
   const activeWorkspace = workspaces.find(w => w.id === activeWorkspaceId);
@@ -92,10 +97,18 @@ export default function App() {
 
 
   const isCalibrated =
-    xAxis.slope !== null &&
-    xAxis.intercept !== null &&
-    activeSeriesYAxis?.slope !== null &&
-    activeSeriesYAxis?.intercept !== null;
+    xAxis.slope !== null && Number.isFinite(xAxis.slope) &&
+    xAxis.intercept !== null && Number.isFinite(xAxis.intercept) &&
+    !!activeSeriesYAxis &&
+    activeSeriesYAxis.slope !== null && Number.isFinite(activeSeriesYAxis.slope) &&
+    activeSeriesYAxis.intercept !== null && Number.isFinite(activeSeriesYAxis.intercept);
+
+  // Force IDLE mode if calibration becomes invalid (e.g. cleared inputs or error)
+  useEffect(() => {
+    if (!isCalibrated && mode !== 'IDLE' && mode !== 'CALIBRATE_X' && mode !== 'CALIBRATE_Y') {
+      setMode('IDLE');
+    }
+  }, [isCalibrated, mode, setMode]);
 
   const handleFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files?.[0]) {
@@ -222,6 +235,10 @@ export default function App() {
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
+      // Check for global modal state first using getState() to avoid dependency cycles or stale state
+      const state = useStore.getState();
+      if (state.modal.isOpen) return;
+
       if ((e.metaKey || e.ctrlKey) && e.key === 'z') {
         e.preventDefault();
         if (e.shiftKey) {
@@ -251,12 +268,37 @@ export default function App() {
         if (e.key === 'ArrowLeft') dx = -step;
         if (e.key === 'ArrowRight') dx = step;
         nudgeSelection(dx, dy);
+      } else if (e.key === 'Escape') {
+        // Cancel Action / Clear Selection
+        const ws = state.workspaces.find(w => w.id === state.activeWorkspaceId);
+        if (!ws) return;
+
+        if (ws.mode !== 'IDLE' && ws.mode !== 'DIGITIZE') {
+          // Cancel current action mode
+          // Check if we can fall back to DIGITIZE (if calibrated)
+          // We'll trust the simple heuristic or just default to IDLE/DIGITIZE logic
+
+          // Re-eval calibration status quickly
+          const activeY = ws.yAxes.find(y => y.id === ws.activeYAxisId);
+          const isCal = ws.xAxis.slope !== null && activeY?.calibration.slope !== null;
+
+          setMode(isCal ? 'DIGITIZE' : 'IDLE');
+        } else {
+          // Clear selection if in normal mode
+          if (ws.selectedPointIds.length > 0) {
+            // We need to call clearSelection from the hook which is bound
+            // BUT clearSelection is also in state actions if we want to use that 
+            // cleanSelection might not be exposed on state object directly? 
+            // It is defined in store.ts interface.
+            state.clearSelection();
+          }
+        }
       }
     };
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [undo, redo, deleteSelectedPoints, nudgeSelection]);
+  }, [undo, redo, deleteSelectedPoints, nudgeSelection, setMode]); // Added setMode dependency
 
   // Handle paste events
   useEffect(() => {
@@ -292,7 +334,7 @@ export default function App() {
     }
   }, [theme]);
 
-  const isXCalibrated = xAxis.slope !== null;
+  const isXCalibrated = xAxis.slope !== null && !isNaN(xAxis.slope);
 
   return (
     <div className="flex h-screen w-screen bg-slate-100 dark:bg-slate-950 transition-colors duration-300">
@@ -438,16 +480,46 @@ export default function App() {
                   </div>
                 )}
               </div>
-              <button
-                onClick={() => startCalibration('X')}
-                title="Start calibration for X axis"
-                className={`w-full flex items-center justify-center gap-2 rounded-lg px-2 py-1.5 text-xs font-bold transition-all active:scale-95 hover:shadow-sm ${mode === 'CALIBRATE_X'
-                  ? 'bg-blue-600 text-white shadow-blue-500/30 animate-pulse-slow'
-                  : 'bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-600 text-slate-600 dark:text-slate-300 hover:border-slate-300 dark:hover:border-slate-500'
-                  }`}
-              >
-                {isXCalibrated ? 'Recalibrate X' : 'Calibrate X'}
-              </button>
+              {xAxis.p1 && xAxis.p2 ? (
+                <div className="flex gap-1">
+                  <input
+                    type="number"
+                    step="any"
+                    value={xAxis.p1.val}
+                    onChange={(e) => updateCalibrationPointValue('X', null, 1, parseFloat(e.target.value))}
+                    className="w-[30%] min-w-0 text-xs px-1.5 py-1 rounded border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-300 focus:border-blue-500 focus:outline-none"
+                    placeholder="X1"
+                    title="Value for Calibration Point 1"
+                  />
+                  <input
+                    type="number"
+                    step="any"
+                    value={xAxis.p2.val}
+                    onChange={(e) => updateCalibrationPointValue('X', null, 2, parseFloat(e.target.value))}
+                    className="w-[30%] min-w-0 text-xs px-1.5 py-1 rounded border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-300 focus:border-blue-500 focus:outline-none"
+                    placeholder="X2"
+                    title="Value for Calibration Point 2"
+                  />
+                  <button
+                    onClick={() => startCalibration('X')}
+                    title="Recalibrate X Axis"
+                    className="flex-1 flex items-center justify-center gap-1 rounded-lg bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400 hover:bg-blue-100 dark:hover:bg-blue-900/30 border border-blue-200 dark:border-blue-800 transition"
+                  >
+                    <RefreshCw className="h-3.5 w-3.5" />
+                  </button>
+                </div>
+              ) : (
+                <button
+                  onClick={() => startCalibration('X')}
+                  title="Start calibration for X axis"
+                  className={`w-full flex items-center justify-center gap-2 rounded-lg px-2 py-1.5 text-xs font-bold transition-all active:scale-95 hover:shadow-sm ${mode === 'CALIBRATE_X'
+                    ? 'bg-blue-600 text-white shadow-blue-500/30 animate-pulse-slow'
+                    : 'bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-600 text-slate-600 dark:text-slate-300 hover:border-slate-300 dark:hover:border-slate-500'
+                    }`}
+                >
+                  {mode === 'CALIBRATE_X' ? 'Calibrating X...' : 'Calibrate X'}
+                </button>
+              )}
             </div>
 
             {/* Y-Axes Section */}
@@ -467,7 +539,7 @@ export default function App() {
                 {yAxes.map((y) => {
                   const isActive = activeYAxisId === y.id;
                   const isCalibrating = mode === 'CALIBRATE_Y' && isActive;
-                  const isYCalibrated = y.calibration.slope !== null;
+                  const isYCalibrated = y.calibration.slope !== null && !isNaN(y.calibration.slope);
                   return (
                     <div
                       key={y.id}
@@ -521,20 +593,53 @@ export default function App() {
                           </button>
                         )}
                       </div>
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setActiveYAxis(y.id);
-                          startCalibration('Y', y.id);
-                        }}
-                        title="Start calibration for this Y axis"
-                        className={`w-full flex items-center justify-center gap-2 rounded-lg px-2 py-1.5 text-xs font-bold transition-all active:scale-95 hover:shadow-sm ${isCalibrating
-                          ? 'bg-blue-600 text-white shadow-blue-500/30 animate-pulse-slow'
-                          : 'bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-600 text-slate-600 dark:text-slate-300 hover:border-slate-300 dark:hover:border-slate-500'
-                          }`}
-                      >
-                        {isYCalibrated ? `Recalibrate ${y.name}` : `Calibrate ${y.name}`}
-                      </button>
+                      {y.calibration.p1 && y.calibration.p2 ? (
+                        <div className="flex gap-1" onClick={(e) => e.stopPropagation()}>
+                          <input
+                            type="number"
+                            step="any"
+                            value={y.calibration.p1.val}
+                            onChange={(e) => updateCalibrationPointValue('Y', y.id, 1, parseFloat(e.target.value))}
+                            className="w-[30%] min-w-0 text-xs px-1.5 py-1 rounded border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-300 focus:border-blue-500 focus:outline-none"
+                            placeholder="Y1"
+                            title="Value for Calibration Point 1"
+                          />
+                          <input
+                            type="number"
+                            step="any"
+                            value={y.calibration.p2.val}
+                            onChange={(e) => updateCalibrationPointValue('Y', y.id, 2, parseFloat(e.target.value))}
+                            className="w-[30%] min-w-0 text-xs px-1.5 py-1 rounded border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-300 focus:border-blue-500 focus:outline-none"
+                            placeholder="Y2"
+                            title="Value for Calibration Point 2"
+                          />
+                          <button
+                            onClick={() => {
+                              setActiveYAxis(y.id);
+                              startCalibration('Y', y.id);
+                            }}
+                            title={`Recalibrate ${y.name}`}
+                            className="flex-1 flex items-center justify-center gap-1 rounded-lg bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400 hover:bg-blue-100 dark:hover:bg-blue-900/30 border border-blue-200 dark:border-blue-800 transition"
+                          >
+                            <RefreshCw className="h-3.5 w-3.5" />
+                          </button>
+                        </div>
+                      ) : (
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setActiveYAxis(y.id);
+                            startCalibration('Y', y.id);
+                          }}
+                          title="Start calibration for this Y axis"
+                          className={`w-full flex items-center justify-center gap-2 rounded-lg px-2 py-1.5 text-xs font-bold transition-all active:scale-95 hover:shadow-sm ${isCalibrating
+                            ? 'bg-blue-600 text-white shadow-blue-500/30 animate-pulse-slow'
+                            : 'bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-600 text-slate-600 dark:text-slate-300 hover:border-slate-300 dark:hover:border-slate-500'
+                            }`}
+                        >
+                          {isCalibrating ? `Calibrating ${y.name}...` : `Calibrate ${y.name}`}
+                        </button>
+                      )}
                     </div>
                   );
                 })}
@@ -695,6 +800,7 @@ export default function App() {
                           />
                         )}
                       </div>
+
                       <div className="flex items-center gap-2">
                         <span className="text-[10px] text-slate-500 dark:text-slate-400 whitespace-nowrap">Intercept:</span>
                         <select
@@ -707,6 +813,31 @@ export default function App() {
                           <option value="firstPoint">Lock to First Point Y</option>
                         </select>
                       </div>
+
+                      {/* Snap Button */}
+                      {activeSeries.fitResult && (
+                        <div className="pt-2 animate-in slide-in-from-top-1 fade-in duration-200">
+                          <button
+                            onClick={() => snapSeriesToFit(activeSeriesId)}
+                            className="w-full flex items-center justify-center gap-2 px-2 py-1.5 rounded-lg bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400 hover:bg-blue-100 dark:hover:bg-blue-900/30 border border-blue-200 dark:border-blue-800 transition active:scale-95 text-xs font-medium"
+                            title="Snap all points in this series to the calculated curve"
+                          >
+                            <Magnet className="h-3.5 w-3.5" />
+                            Snap Points to Curve
+                          </button>
+                        </div>
+                      )}
+
+                      {/* Warning for insufficient points */}
+                      {activeSeries.fitConfig.type === 'polynomial' &&
+                        activeSeries.fitConfig.order &&
+                        activeSeries.points.filter(p => p.dataX !== undefined).length <= activeSeries.fitConfig.order && (
+                          <div className="text-[10px] text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-900/20 p-2 rounded border border-amber-200 dark:border-amber-800 flex items-start gap-1.5">
+                            <span className="mt-0.5">⚠️</span>
+                            <span>Need {activeSeries.fitConfig.order + 1} points for Order {activeSeries.fitConfig.order} fit</span>
+                          </div>
+                        )}
+
                       {activeSeries.fitResult?.equation && (
                         <div className="text-[10px] font-mono text-slate-500 dark:text-slate-400 bg-white dark:bg-slate-900 p-1.5 rounded border border-slate-100 dark:border-slate-800 break-all leading-tight">
                           y = {activeSeries.fitResult.equation}
@@ -715,8 +846,9 @@ export default function App() {
                     </div>
                   )}
                 </div>
-              </div>
-            )}
+              </div >
+            )
+            }
 
             <div className="grid grid-cols-2 gap-2 pt-2">
               <button
@@ -733,6 +865,22 @@ export default function App() {
                 <ScanLine className="h-4 w-4" />
                 Digitize
               </button>
+
+              <button
+                disabled={!isCalibrated}
+                onClick={() => setMode(mode === 'SELECT' ? 'IDLE' : 'SELECT')}
+                title="Select and manipulate existing points"
+                className={`flex items-center justify-center gap-2 rounded-xl px-3 py-3 text-sm font-bold transition-all active:scale-95 hover:shadow-md ${mode === 'SELECT'
+                  ? 'bg-blue-600 text-white shadow-blue-500/40 scale-[1.02] animate-pulse-slow'
+                  : isCalibrated
+                    ? 'bg-blue-50 dark:bg-blue-900/20 text-blue-700 dark:text-blue-400 hover:bg-blue-100 dark:hover:bg-blue-900/30 ring-1 ring-inset ring-blue-600/20'
+                    : 'bg-slate-100 dark:bg-slate-800 text-slate-400 cursor-not-allowed'
+                  }`}
+              >
+                <MousePointer2 className="h-4 w-4" />
+                Select
+              </button>
+
               <button
                 disabled={!isCalibrated}
                 onClick={() => setMode(mode === 'TRACE' ? 'IDLE' : 'TRACE')}
@@ -781,20 +929,6 @@ export default function App() {
               </button>
 
               <button
-                disabled={!isCalibrated}
-                onClick={() => setMode(mode === 'SELECT' ? 'IDLE' : 'SELECT')}
-                title="Select and manipulate existing points"
-                className={`flex items-center justify-center gap-2 rounded-xl px-3 py-3 text-sm font-bold transition-all active:scale-95 hover:shadow-md ${mode === 'SELECT'
-                  ? 'bg-blue-600 text-white shadow-blue-500/40 scale-[1.02] animate-pulse-slow'
-                  : isCalibrated
-                    ? 'bg-blue-50 dark:bg-blue-900/20 text-blue-700 dark:text-blue-400 hover:bg-blue-100 dark:hover:bg-blue-900/30 ring-1 ring-inset ring-blue-600/20'
-                    : 'bg-slate-100 dark:bg-slate-800 text-slate-400 cursor-not-allowed'
-                  }`}
-              >
-                <MousePointer2 className="h-4 w-4" />
-                Select
-              </button>
-              <button
                 disabled={!isCalibrated || !activeSeries}
                 onClick={() => {
                   openModal({
@@ -823,10 +957,10 @@ export default function App() {
                 Resample
               </button>
             </div>
-          </div>
+          </div >
 
           {/* Points Bin */}
-          <div className="flex-1 min-h-[150px] p-4 bg-white dark:bg-slate-900 rounded-2xl shadow-md border border-slate-200 dark:border-slate-800 flex flex-col transition-all hover:shadow-lg animate-slide-up" style={{ animationDelay: '0.4s' }}>
+          < div className="flex-1 min-h-[400px] p-4 bg-white dark:bg-slate-900 rounded-2xl shadow-md border border-slate-200 dark:border-slate-800 flex flex-col transition-all hover:shadow-lg animate-slide-up" style={{ animationDelay: '0.4s' }}>
             <div className="flex items-center justify-between mb-2">
               <h3 className="font-semibold text-slate-800 dark:text-slate-200 text-sm">Points <span className="ml-1 text-xs font-normal text-slate-400">({series.reduce((acc, s) => acc + s.points.length, 0)})</span></h3>
               <div className="flex gap-1">
@@ -947,9 +1081,9 @@ export default function App() {
                 </table>
               </div>
             </div>
-          </div>
+          </div >
 
-        </div>
+        </div >
       </aside >
 
       <div className="flex-1 h-full overflow-hidden relative bg-slate-100 dark:bg-slate-950">
@@ -957,7 +1091,11 @@ export default function App() {
 
           {/* Canvas Toolbar */}
           <div className="h-10 border-b border-slate-100 dark:border-slate-800 flex items-center px-3 gap-2 bg-slate-50/50 dark:bg-slate-800/30">
-            <div className="flex items-center gap-1">
+            <div
+              className="flex items-center gap-1 relative"
+              onMouseEnter={() => setIsHistoryOpen(true)}
+              onMouseLeave={() => setIsHistoryOpen(false)}
+            >
               <button
                 onClick={undo}
                 title="Undo (Ctrl+Z)"
@@ -972,6 +1110,16 @@ export default function App() {
               >
                 <Redo className="w-4 h-4" />
               </button>
+
+              <HistoryList
+                isOpen={isHistoryOpen}
+                history={activeWorkspace?.history || []}
+                currentIndex={activeWorkspace?.historyIndex ?? -1}
+                onJump={(index) => {
+                  jumpToHistory(index);
+                  setIsHistoryOpen(false);
+                }}
+              />
             </div>
             <div className="w-px h-4 bg-slate-200 dark:bg-slate-700 mx-1" />
             {/* Workspace Tabs moved here */}

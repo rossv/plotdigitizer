@@ -4,6 +4,7 @@ import type { AppMode, AxisCalibration, Point, Series, YAxisDefinition, CurveFit
 import { calculateCalibration, pixelToData, dataToPixel } from './utils/math';
 import { fitLinear, fitPolynomial, fitExponential, findBestFit, generatePointsFromPredict } from './utils/curveFit';
 import { detectAxes } from './utils/autoDetect';
+import { recognizeText } from './utils/ocr';
 
 // --- Types ---
 
@@ -43,7 +44,7 @@ interface Workspace {
   singlePoints: Point[]; // Independent graphical points
 
   // Undo/Redo history
-  history: { series: Series[]; yAxes: YAxisDefinition[] }[];
+  history: { series: Series[]; yAxes: YAxisDefinition[]; description: string }[];
   historyIndex: number;
 
   selectedPointIds: string[];
@@ -102,6 +103,7 @@ interface StoreState {
 
   undo: () => void;
   redo: () => void;
+  jumpToHistory: (index: number) => void;
 
   updateCalibrationPointPosition: (
     axisType: 'X' | 'Y',
@@ -109,6 +111,13 @@ interface StoreState {
     pointIndex: 1 | 2,
     newPx: number,
     newPy: number
+  ) => void;
+
+  updateCalibrationPointValue: (
+    axisType: 'X' | 'Y',
+    axisId: string | null,
+    pointIndex: 1 | 2,
+    newValue: number
   ) => void;
 
   updateSeriesLabelPosition: (seriesId: string, position: { x: number; y: number } | undefined) => void;
@@ -121,6 +130,7 @@ interface StoreState {
   updatePointPosition: (pointId: string, px: number, py: number) => void;
   nudgeSelection: (dx: number, dy: number) => void;
   snapSeriesPoints: (seriesId: string, config: SnapConfig) => void;
+  snapSeriesToFit: (seriesId: string) => void;
   toggleSeriesPointCoordinates: (seriesId: string) => void;
   resampleActiveSeries: (count: number) => void;
   autoDetectAxes: () => Promise<void>;
@@ -236,8 +246,32 @@ const createInitialWorkspace = (name: string): Workspace => ({
   activeSeriesId: 'series-1',
   singlePoints: [],
   pendingCalibrationPoint: null,
-  history: [],
-  historyIndex: -1,
+  history: [
+    {
+      series: [
+        {
+          id: 'series-1',
+          name: 'Series 1',
+          color: SERIES_PALETTE[0],
+          points: [],
+          yAxisId: defaultYAxisId,
+          fitConfig: { enabled: false, type: 'linear', interceptMode: 'auto' },
+          showLabels: false,
+          showPointCoordinates: false,
+        },
+      ],
+      yAxes: [
+        {
+          id: defaultYAxisId,
+          name: 'Y Axis 1',
+          color: '#ef4444',
+          calibration: { ...initialAxis }
+        }
+      ],
+      description: 'Initial State'
+    }
+  ],
+  historyIndex: 0,
   selectedPointIds: [],
 });
 
@@ -319,9 +353,9 @@ export const useStore = create<StoreState>((set, get) => ({
           ws[key] = projectData[key];
         }
       });
-      // Ensure history is reset
-      ws.history = [];
-      ws.historyIndex = -1;
+      // Ensure history is initialized with the current state
+      ws.history = [{ series: ws.series, yAxes: ws.yAxes, description: 'Initial State' }];
+      ws.historyIndex = 0;
 
       newWorkspaces = [...state.workspaces, ws]; // Add as new tab? Or replace? 
       // User request said "saving or loading a project is effective for all workspaces"
@@ -585,7 +619,7 @@ export const useStore = create<StoreState>((set, get) => ({
       return updateSeriesFit({ ...s, points: [] });
     });
     const newHistory = ws.history ? ws.history.slice(0, ws.historyIndex + 1) : [];
-    newHistory.push({ series: updatedSeries, yAxes: ws.yAxes });
+    newHistory.push({ series: updatedSeries, yAxes: ws.yAxes, description: 'Clear Series Points' });
 
     return {
       series: updatedSeries,
@@ -667,7 +701,7 @@ export const useStore = create<StoreState>((set, get) => ({
 
     // 5. Check/Add History
     const newHistory = ws.history ? ws.history.slice(0, ws.historyIndex + 1) : [];
-    newHistory.push({ series: updatedSeries, yAxes: ws.yAxes });
+    newHistory.push({ series: updatedSeries, yAxes: ws.yAxes, description: 'Resample Series' });
 
     return {
       series: updatedSeries,
@@ -704,7 +738,7 @@ export const useStore = create<StoreState>((set, get) => ({
     });
 
     const newHistory = ws.history ? ws.history.slice(0, ws.historyIndex + 1) : [];
-    newHistory.push({ series: updatedSeries, yAxes: ws.yAxes });
+    newHistory.push({ series: updatedSeries, yAxes: ws.yAxes, description: 'Add Point' });
 
     return {
       series: updatedSeries,
@@ -770,7 +804,7 @@ export const useStore = create<StoreState>((set, get) => ({
     });
 
     const newHistory = ws.history ? ws.history.slice(0, ws.historyIndex + 1) : [];
-    newHistory.push({ series: updatedSeries, yAxes: ws.yAxes });
+    newHistory.push({ series: updatedSeries, yAxes: ws.yAxes, description: 'Add Points' });
 
     return {
       series: updatedSeries,
@@ -798,7 +832,7 @@ export const useStore = create<StoreState>((set, get) => ({
     });
 
     const newHistory = ws.history ? ws.history.slice(0, ws.historyIndex + 1) : [];
-    newHistory.push({ series: updatedSeries, yAxes: ws.yAxes });
+    newHistory.push({ series: updatedSeries, yAxes: ws.yAxes, description: 'Delete Point' });
 
     return {
       series: updatedSeries,
@@ -813,41 +847,179 @@ export const useStore = create<StoreState>((set, get) => ({
     if (!ws || !ws.imageUrl) return;
 
     try {
-      state.openModal({ type: 'alert', message: 'Detecting axes... please wait.' });
+      // state.openModal({ type: 'alert', message: 'Detecting axes... please wait.' });
 
       const result = await detectAxes(ws.imageUrl);
 
-      state.closeModal();
+      // state.openModal({ type: 'alert', message: 'Axes detected. Reading values...' });
+
+      // Helper to define ROI
+      // Standard: 
+      // X Axis: Numbers are below the axis.
+      // Y Axis: Numbers are to the left of the axis.
+
+      const roiSize = { w: 60, h: 30 }; // Approx box size
+      const padding = 5;
+
+      // X1: Origin (Left). Number is likely just below, slightly left? 
+      // If X axis is detected, let's look below P1 and P2.
+      const xP1Roi = {
+        x: result.xAxis.p1.x - roiSize.w / 2,
+        y: result.xAxis.p1.y + padding,
+        w: roiSize.w,
+        h: roiSize.h
+      };
+      const xP2Roi = {
+        x: result.xAxis.p2.x - roiSize.w / 2,
+        y: result.xAxis.p2.y + padding,
+        w: roiSize.w,
+        h: roiSize.h
+      };
+
+      // Y1: Origin (Bottom). Number is left.
+      const yP1Roi = {
+        x: result.yAxis.p1.x - roiSize.w - padding,
+        y: result.yAxis.p1.y - roiSize.h / 2,
+        w: roiSize.w,
+        h: roiSize.h
+      };
+      const yP2Roi = {
+        x: result.yAxis.p2.x - roiSize.w - padding,
+        y: result.yAxis.p2.y - roiSize.h / 2,
+        w: roiSize.w,
+        h: roiSize.h
+      };
+
+      // OCR to find Labels
+      // X Label: Centered below the X axis (roughly).
+      // Let's take a wide box below the X axis, centered.
+      const xMid = (result.xAxis.p1.x + result.xAxis.p2.x) / 2;
+      const xLabelRoi = {
+        x: xMid - 100, // 200px width
+        y: result.xAxis.p1.y + 35, // Below the numbers (which are ~5-30px below)
+        w: 200,
+        h: 40
+      };
+
+      // Y Label: Centered left of the Y axis.
+      // Often rotated. Tesseract might catch it if it's horizontal, but if vertical...
+      // Let's try to grab it. If Tesseract sees rotated text, it might read it.
+      const yMid = (result.yAxis.p1.y + result.yAxis.p2.y) / 2;
+      const yLabelRoi = {
+        x: result.yAxis.p1.x - 80, // Far left
+        y: yMid - 100, // 200px height
+        w: 50, // Narrow vertical strip?
+        h: 200
+      };
+
+      // Run OCR (Parallel)
+      // For numbers: restrict to numbers.
+      // For labels: allow all (or alphabet).
+      // Note: We need to pass options to recognizeText. I updated recognizeText to take options.
+      const [x1Str, x2Str, y1Str, y2Str, xName, yName] = await Promise.all([
+        recognizeText(ws.imageUrl, xP1Roi, { whitelist: '0123456789.-' }),
+        recognizeText(ws.imageUrl, xP2Roi, { whitelist: '0123456789.-' }),
+        recognizeText(ws.imageUrl, yP1Roi, { whitelist: '0123456789.-' }),
+        recognizeText(ws.imageUrl, yP2Roi, { whitelist: '0123456789.-' }),
+        recognizeText(ws.imageUrl, xLabelRoi), // No whitelist = all chars
+        recognizeText(ws.imageUrl, yLabelRoi),
+      ]);
+
+      const parseVal = (s: string) => {
+        const clean = s.replace(/[^0-9.-]/g, '');
+        const n = parseFloat(clean);
+        return isNaN(n) ? NaN : n;
+      };
+
+      const xP1 = { px: parseFloat(String(result.xAxis.p1.x)), py: parseFloat(String(result.xAxis.p1.y)), val: parseVal(x1Str) };
+      const xP2 = { px: parseFloat(String(result.xAxis.p2.x)), py: parseFloat(String(result.xAxis.p2.y)), val: parseVal(x2Str) };
+
+      const yP1 = { px: parseFloat(String(result.yAxis.p1.x)), py: parseFloat(String(result.yAxis.p1.y)), val: parseVal(y1Str) };
+      const yP2 = { px: parseFloat(String(result.yAxis.p2.x)), py: parseFloat(String(result.yAxis.p2.y)), val: parseVal(y2Str) };
 
       set(state => updateActiveWorkspace(state, (ws) => {
-        const xP1 = { px: result.xAxis.p1.x, py: result.xAxis.p1.y, val: NaN };
-        const xP2 = { px: result.xAxis.p2.x, py: result.xAxis.p2.y, val: NaN };
-
-        const yP1 = { px: result.yAxis.p1.x, py: result.yAxis.p1.y, val: NaN };
-        const yP2 = { px: result.yAxis.p2.x, py: result.yAxis.p2.y, val: NaN };
-
         // Update X Axis
-        const newXAxis = { ...ws.xAxis, p1: xP1, p2: xP2, slope: null, intercept: null };
+        let newXAxis = { ...ws.xAxis, p1: xP1, p2: xP2, slope: null as number | null, intercept: null as number | null };
+        const newXAxisName = (xName && xName.length > 1) ? xName.replace(/[\n\r]/g, ' ').trim() : ws.xAxisName;
+
+
+        if (!isNaN(xP1.val) && !isNaN(xP2.val)) {
+          try {
+            let px1 = xP1.px;
+            let px2 = xP2.px;
+            if (Math.abs(px1 - px2) < 0.1) px2 += 1; // Prevent coincidence
+
+            const { slope, intercept } = calculateCalibration(px1, xP1.val, px2, xP2.val, newXAxis.isLog);
+            newXAxis.slope = slope;
+            newXAxis.intercept = intercept;
+          } catch (e) {
+            console.warn("Auto-calibration X failed", e);
+          }
+        }
 
         // Update Active Y Axis
         const newYAxes = ws.yAxes.map(y => {
           if (y.id === ws.activeYAxisId) {
-            return { ...y, calibration: { ...y.calibration, p1: yP1, p2: yP2, slope: null, intercept: null } };
+            let newCalib = { ...y.calibration, p1: yP1, p2: yP2, slope: null as number | null, intercept: null as number | null };
+            let newName = y.name;
+            if (yName && yName.length > 1) {
+              newName = yName.replace(/[\n\r]/g, ' ').trim();
+            }
+            if (!isNaN(yP1.val) && !isNaN(yP2.val)) {
+              try {
+                let py1 = yP1.py;
+                let py2 = yP2.py;
+                if (Math.abs(py1 - py2) < 0.1) py2 += 1; // Prevent coincidence
+
+                const { slope, intercept } = calculateCalibration(py1, yP1.val, py2, yP2.val, newCalib.isLog);
+                newCalib.slope = slope;
+                newCalib.intercept = intercept;
+              } catch (e) {
+                console.warn("Auto-calibration Y failed", e);
+              }
+            }
+            return { ...y, name: newName, calibration: newCalib };
           }
           return y;
         });
 
+        // Pass errors to next step via temporary state or just alert here?
+        // We are inside set(), we can't side-effect easily. 
+        // But we can store errors in the workspace temporarily? No.
+        // We can just log. 
+        // Actually, we can retarget the opensModal from OUTSIDE set.
+
         return {
           xAxis: newXAxis,
+          xAxisName: newXAxisName,
           yAxes: newYAxes,
-          mode: 'IDLE'
+          mode: 'IDLE',
+          // We can't pass the error string out easily from this reducer-like block.
+          // But we can check isCalibrated logic? No.
         };
       }));
 
-      // Notify success
-      setTimeout(() => {
-        get().openModal({ type: 'alert', message: 'Axes detected! Click on the calibration points to set their values.' });
-      }, 100);
+      // We need to know if it failed.
+      // We can check the state AFTER the update.
+      const checks = get().workspaces.find(w => w.id === state.activeWorkspaceId);
+      const isXOk = checks?.xAxis.slope !== null;
+      const activeY = checks?.yAxes.find(y => y.id === checks.activeYAxisId);
+      const isYOk = activeY?.calibration.slope !== null;
+
+      let msg = 'Auto-calibration complete.\nAxes detected.';
+      if (!isXOk || !isYOk) {
+        msg += '\n\nWARNING: Calibration failed for ' + (!isXOk ? 'X ' : '') + (!isYOk ? 'Y ' : '') + 'axis.';
+        msg += '\nPossible causes: Coincident points, or invalid values.';
+        msg += '\nPlease check values and position.';
+      } else {
+        msg += '\nValues calculated successfully.';
+      }
+
+      // Notify success/warning
+      get().openModal({
+        type: 'alert',
+        message: msg
+      });
 
     } catch (e) {
       console.error(e);
@@ -856,17 +1028,19 @@ export const useStore = create<StoreState>((set, get) => ({
   },
 
   undo: () => set(state => updateActiveWorkspace(state, (ws) => {
-    if (ws.historyIndex < 0) return {};
-    const newIndex = ws.historyIndex - 1;
-    const targetIndex = Math.max(newIndex, 0);
+    // Cannot undo if we are at the initial state (index 0)
+    if (ws.historyIndex <= 0) return {};
 
-    if (!ws.history || targetIndex >= ws.history.length) {
+    const newIndex = ws.historyIndex - 1;
+
+    // Safety check
+    if (!ws.history || newIndex >= ws.history.length) {
       return { historyIndex: newIndex };
     }
 
     return {
-      series: ws.history[targetIndex].series,
-      yAxes: ws.history[targetIndex].yAxes,
+      series: ws.history[newIndex].series,
+      yAxes: ws.history[newIndex].yAxes,
       historyIndex: newIndex
     };
   })),
@@ -878,6 +1052,64 @@ export const useStore = create<StoreState>((set, get) => ({
       series: ws.history[newIndex].series,
       yAxes: ws.history[newIndex].yAxes,
       historyIndex: newIndex
+    };
+  })),
+
+  jumpToHistory: (index) => set(state => updateActiveWorkspace(state, (ws) => {
+    if (!ws.history || index < 0 || index >= ws.history.length) return {};
+
+    // If index is -1, we are in initial state. Wait, initial state isn't clearly stored? 
+    // Actually, history stores *previous* states?
+    // Let's look at `undo`.
+    // undo sets index = index - 1. 
+    // If index = 0, we restore history[0]. 
+    // Wait, undo logic:
+    // const newIndex = ws.historyIndex - 1;
+    // const targetIndex = Math.max(newIndex, 0); <-- This looks suspicious.
+    // If I undo from index 0 -> -1. targetIndex = 0. Restores history[0]. 
+
+    // Correction: The `history` array contains *Snapshots after actions*.
+    // When we ADD an action, we push to history.
+    // So history[0] is state AFTER action 1.
+    // Index points to the current state in history.
+
+    // If I am at index 5, and I undo. index becomes 4.
+    // We should restore history[4].
+    // If I undo from index 0 -> index becomes -1.
+    // We can't restore history[-1]. 
+    // We probably need to store the *Initial State* or assume if we go past 0 we go to empty?
+    // The current undo logic: `const targetIndex = Math.max(newIndex, 0);`
+    // If index is -1, it restores `history[0]`. This means checking undo limit is effectively stuck at state 0?
+    // Let's verify existing behavior.
+
+    // Existing undo:
+    // if (ws.historyIndex < 0) return {};
+    // const newIndex = ws.historyIndex - 1;
+    // const targetIndex = Math.max(newIndex, 0); // Stops at 0
+    // return { series: ws.history[targetIndex].series ... }
+
+    // This implies we can never go back to "empty" if we have history. 
+    // It seems the initial empty state is lost if we don't store it.
+    // However, I will follow the requested "jump" logic which sets the index.
+
+    // If I jump to index K:
+    // historyIndex = K.
+    // State restored = history[K].
+
+    // But what if K = -1? 
+    // If existing undo doesn't support -1, I won't force it, but "Reverse chronological order" implies I can go back.
+    // Let's just implement setting the index and restoring that index.
+
+    if (index === -1) {
+      // Cannot easily restore initial state unless we kept it.
+      // For now, allow jumping to 0 to N.
+      return {};
+    }
+
+    return {
+      series: ws.history[index].series,
+      yAxes: ws.history[index].yAxes,
+      historyIndex: index
     };
   })),
 
@@ -950,6 +1182,75 @@ export const useStore = create<StoreState>((set, get) => ({
     }
   })),
 
+  updateCalibrationPointValue: (axisType, axisId, pointIndex, newValue) => set(state => updateActiveWorkspace(state, (ws) => {
+    if (axisType === 'X') {
+      const newAxis = { ...ws.xAxis };
+      if (pointIndex === 1 && newAxis.p1) newAxis.p1 = { ...newAxis.p1, val: newValue };
+      else if (pointIndex === 2 && newAxis.p2) newAxis.p2 = { ...newAxis.p2, val: newValue };
+
+      if (newAxis.p1 && newAxis.p2) {
+        try {
+          const { slope, intercept } = calculateCalibration(
+            newAxis.p1.px, newAxis.p1.val,
+            newAxis.p2.px, newAxis.p2.val,
+            newAxis.isLog
+          );
+          newAxis.slope = slope;
+          newAxis.intercept = intercept;
+
+          const updatedSeries = ws.series.map(s => {
+            const yAxis = ws.yAxes.find(y => y.id === s.yAxisId)?.calibration;
+            const updatedPoints = s.points.map(p => {
+              const coords = pixelToData(p.x, p.y, newAxis, yAxis || { ...initialAxis });
+              return coords ? { ...p, dataX: coords.x, dataY: coords.y } : p;
+            });
+            return updateSeriesFit({ ...s, points: updatedPoints });
+          });
+          return { xAxis: newAxis, series: updatedSeries };
+
+        } catch (e) {
+          console.error(e);
+          return { xAxis: newAxis };
+        }
+      }
+      return { xAxis: newAxis };
+    } else {
+      const updatedYAxes = ws.yAxes.map(axis => {
+        if (axis.id !== axisId) return axis;
+        const newCalib = { ...axis.calibration };
+        if (pointIndex === 1 && newCalib.p1) newCalib.p1 = { ...newCalib.p1, val: newValue };
+        else if (pointIndex === 2 && newCalib.p2) newCalib.p2 = { ...newCalib.p2, val: newValue };
+
+        if (newCalib.p1 && newCalib.p2) {
+          try {
+            const { slope, intercept } = calculateCalibration(
+              newCalib.p1.py, newCalib.p1.val,
+              newCalib.p2.py, newCalib.p2.val,
+              newCalib.isLog
+            );
+            newCalib.intercept = intercept;
+            newCalib.slope = slope;
+          } catch (e) {
+            console.error(e);
+          }
+        }
+        return { ...axis, calibration: newCalib };
+      });
+
+      const updatedSeries = ws.series.map(s => {
+        if (s.yAxisId !== axisId) return s;
+        const yAxis = updatedYAxes.find(y => y.id === axisId)?.calibration;
+        const updatedPoints = s.points.map(p => {
+          const coords = pixelToData(p.x, p.y, ws.xAxis, yAxis || { ...initialAxis });
+          return coords ? { ...p, dataX: coords.x, dataY: coords.y } : p;
+        });
+        return updateSeriesFit({ ...s, points: updatedPoints });
+      });
+
+      return { yAxes: updatedYAxes, series: updatedSeries };
+    }
+  })),
+
   updateSeriesLabelPosition: (seriesId, position) => set(state => updateActiveWorkspace(state, (ws) => ({
     series: ws.series.map(s => s.id === seriesId ? { ...s, labelPosition: position } : s)
   }))),
@@ -991,7 +1292,7 @@ export const useStore = create<StoreState>((set, get) => ({
     const updatedSinglePoints = ws.singlePoints.filter(p => !ws.selectedPointIds.includes(p.id));
 
     const newHistory = ws.history ? ws.history.slice(0, ws.historyIndex + 1) : [];
-    newHistory.push({ series: updatedSeries, yAxes: ws.yAxes });
+    newHistory.push({ series: updatedSeries, yAxes: ws.yAxes, description: 'Delete Selection' });
 
     return {
       series: updatedSeries,
@@ -1055,7 +1356,7 @@ export const useStore = create<StoreState>((set, get) => ({
     });
 
     const newHistory = ws.history ? ws.history.slice(0, ws.historyIndex + 1) : [];
-    newHistory.push({ series: updatedSeries, yAxes: ws.yAxes });
+    newHistory.push({ series: updatedSeries, yAxes: ws.yAxes, description: 'Move Point' });
 
     return {
       series: updatedSeries,
@@ -1103,7 +1404,7 @@ export const useStore = create<StoreState>((set, get) => ({
     });
 
     const newHistory = ws.history ? ws.history.slice(0, ws.historyIndex + 1) : [];
-    newHistory.push({ series: updatedSeries, yAxes: ws.yAxes });
+    newHistory.push({ series: updatedSeries, yAxes: ws.yAxes, description: 'Nudge Selection' });
 
     return {
       series: updatedSeries,
@@ -1157,7 +1458,49 @@ export const useStore = create<StoreState>((set, get) => ({
     });
 
     const newHistory = ws.history ? ws.history.slice(0, ws.historyIndex + 1) : [];
-    newHistory.push({ series: updatedSeries, yAxes: ws.yAxes });
+    newHistory.push({ series: updatedSeries, yAxes: ws.yAxes, description: 'Snap Points' });
+
+    return {
+      series: updatedSeries,
+      history: newHistory,
+      historyIndex: newHistory.length - 1
+    };
+  })),
+
+  snapSeriesToFit: (seriesId) => set(state => updateActiveWorkspace(state, (ws) => {
+    const series = ws.series.find(s => s.id === seriesId);
+    if (!series || !series.fitResult || !series.fitConfig.enabled) return {};
+
+    const xAxis = ws.xAxis;
+    const yAxis = ws.yAxes.find(y => y.id === series.yAxisId)?.calibration;
+
+    if (!yAxis) return {};
+
+    const predict = series.fitResult.predict;
+
+    const updatedPoints = series.points.map(p => {
+      if (p.dataX === undefined) return p;
+
+      const newDataY = predict(p.dataX);
+      const pixel = dataToPixel(p.dataX, newDataY, xAxis, yAxis);
+
+      if (!pixel) return p;
+
+      return {
+        ...p,
+        dataY: newDataY,
+        x: pixel.x,
+        y: pixel.y
+      };
+    });
+
+    const updatedSeries = ws.series.map(s => {
+      if (s.id !== seriesId) return s;
+      return updateSeriesFit({ ...s, points: updatedPoints });
+    });
+
+    const newHistory = ws.history ? ws.history.slice(0, ws.historyIndex + 1) : [];
+    newHistory.push({ series: updatedSeries, yAxes: ws.yAxes, description: 'Snap to Curve' });
 
     return {
       series: updatedSeries,

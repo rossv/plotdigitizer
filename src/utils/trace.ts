@@ -75,9 +75,9 @@ export const traceLine = (
                     // Let's just use sign and magnitude.
 
                     if (dot < 0) {
-                        anglePenalty = 1000; // Strong penalty for going backward against momentum
+                        anglePenalty = 2000; // Strong penalty for going backward against momentum
                     } else if (dot === 0) {
-                        anglePenalty = 50; // Moderate penalty for 90 degree turn
+                        anglePenalty = 200; // Significant penalty for 90 degree turn
                     } else {
                         anglePenalty = 0; // No penalty for forward moves
                     }

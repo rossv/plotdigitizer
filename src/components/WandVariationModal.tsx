@@ -40,6 +40,24 @@ export const WandVariationModal: React.FC<WandVariationModalProps> = ({
         }
     }, [isOpen, imageData, seed]);
 
+    // Global Keyboard Interaction
+    useEffect(() => {
+        if (!isOpen) return;
+        const handleKeys = (e: KeyboardEvent) => {
+            if (e.key === 'Escape') {
+                e.preventDefault();
+                e.stopPropagation();
+                onClose();
+            } else if (e.key === 'Enter') {
+                e.preventDefault();
+                e.stopPropagation();
+                handleConfirm();
+            }
+        };
+        window.addEventListener('keydown', handleKeys, { capture: true });
+        return () => window.removeEventListener('keydown', handleKeys, { capture: true });
+    }, [isOpen, selectedIdx, variations, onClose]); // Dependencies for closure stability
+
     if (!isOpen) return null;
 
     const handleConfirm = () => {

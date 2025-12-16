@@ -153,16 +153,19 @@ export const detectAxes = async (imageUrl: string): Promise<CalibrationPoints> =
         // P2 = Far end of the axis
 
         // For X Axis:
-        // P1 is Origin.
-        // P2 is the right-most point of the detected line.
-        const xP2x = Math.max(bestXLine.x1, bestXLine.x2);
-        // Ensure P2 is to the right of P1
+        // P1 is Origin (axisX, axisY).
+        // P2 should be the endpoint of the line furthest from Origin.
+        const distX1 = Math.abs(bestXLine.x1 - axisX);
+        const distX2 = Math.abs(bestXLine.x2 - axisX);
+        const xP2x = distX1 > distX2 ? bestXLine.x1 : bestXLine.x2;
         const xP2 = { x: xP2x, y: axisY };
 
         // For Y Axis:
-        // P1 is Origin.
-        // P2 is the top-most point (smallest y).
-        const yP2y = Math.min(bestYLine.y1, bestYLine.y2);
+        // P1 is Origin (axisX, axisY).
+        // P2 should be the endpoint furthest from Origin.
+        const distY1 = Math.abs(bestYLine.y1 - axisY);
+        const distY2 = Math.abs(bestYLine.y2 - axisY);
+        const yP2y = distY1 > distY2 ? bestYLine.y1 : bestYLine.y2;
         const yP2 = { x: axisX, y: yP2y };
 
         // However, currently P1/P2 order usually matches min/max values.

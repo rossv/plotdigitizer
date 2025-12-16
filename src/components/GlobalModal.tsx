@@ -20,6 +20,30 @@ export const GlobalModal: React.FC = () => {
         }
     }, [modal.isOpen, modal.type, modal.defaultValue]);
 
+    // Handle keydown globally when modal is open
+    useEffect(() => {
+        if (!modal.isOpen) return;
+
+        const handleKeyDown = (e: KeyboardEvent) => {
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                if (modal.type === 'prompt') {
+                    modal.onConfirm?.(inputValue);
+                } else {
+                    modal.onConfirm?.();
+                }
+                closeModal();
+            } else if (e.key === 'Escape') {
+                e.preventDefault();
+                modal.onCancel?.();
+                closeModal();
+            }
+        };
+
+        window.addEventListener('keydown', handleKeyDown);
+        return () => window.removeEventListener('keydown', handleKeyDown);
+    }, [modal, inputValue, closeModal]);
+
     if (!modal.isOpen) return null;
 
     const handleConfirm = () => {
@@ -34,16 +58,6 @@ export const GlobalModal: React.FC = () => {
     const handleCancel = () => {
         modal.onCancel?.();
         closeModal();
-    };
-
-    const handleKeyDown = (e: React.KeyboardEvent) => {
-        if (e.key === 'Enter') {
-            e.preventDefault();
-            handleConfirm();
-        } else if (e.key === 'Escape') {
-            e.preventDefault();
-            handleCancel();
-        }
     };
 
     const getIcon = () => {
@@ -79,7 +93,6 @@ export const GlobalModal: React.FC = () => {
             {/* Modal Content */}
             <div
                 className="relative bg-white dark:bg-slate-800 rounded-xl shadow-2xl border border-slate-200 dark:border-slate-700 w-full max-w-sm overflow-hidden transform transition-all scale-100 opacity-100"
-                onKeyDown={handleKeyDown}
             >
                 <div className="p-6">
                     <div className="flex items-start gap-4">
@@ -95,7 +108,7 @@ export const GlobalModal: React.FC = () => {
                             <h3 className="text-lg font-semibold text-slate-900 dark:text-slate-100 mb-2">
                                 {getTitle()}
                             </h3>
-                            <p className="text-slate-600 dark:text-slate-300 mb-4 leading-relaxed">
+                            <p className="text-slate-600 dark:text-slate-300 mb-4 leading-relaxed whitespace-pre-wrap">
                                 {modal.message}
                             </p>
 
