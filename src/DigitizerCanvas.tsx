@@ -455,8 +455,10 @@ export const DigitizerCanvas = forwardRef<DigitizerHandle, DigitizerCanvasProps>
           const box = selectionBox;
           const selectedIds: string[] = [];
           points.forEach(p => {
-            if (p.x >= box.x && p.x <= box.x + box.width && p.y >= box.y && p.y <= box.y + box.height) {
-              selectedIds.push(p.id);
+            if (p.seriesId === activeWorkspace.activeSeriesId) {
+              if (p.x >= box.x && p.x <= box.x + box.width && p.y >= box.y && p.y <= box.y + box.height) {
+                selectedIds.push(p.id);
+              }
             }
           });
           // Append
@@ -945,7 +947,9 @@ export const DigitizerCanvas = forwardRef<DigitizerHandle, DigitizerCanvasProps>
                     onClick={(e: any) => {
                       e.cancelBubble = true;
                       if (mode === 'SELECT' || mode === 'DIGITIZE' || mode === 'SINGLE_POINT') {
-                        togglePointSelection(p.id, e.evt.ctrlKey || e.evt.shiftKey);
+                        if (p.seriesId === activeWorkspace.activeSeriesId) {
+                          togglePointSelection(p.id, e.evt.ctrlKey || e.evt.shiftKey);
+                        }
                       }
                     }}
                   >
@@ -993,7 +997,9 @@ export const DigitizerCanvas = forwardRef<DigitizerHandle, DigitizerCanvasProps>
                   onClick={(e: any) => {
                     e.cancelBubble = true;
                     if (mode === 'SELECT' || mode === 'DIGITIZE' || mode === 'SINGLE_POINT') {
-                      togglePointSelection(p.id, e.evt.ctrlKey || e.evt.shiftKey);
+                      if (p.seriesId === activeWorkspace.activeSeriesId) {
+                        togglePointSelection(p.id, e.evt.ctrlKey || e.evt.shiftKey);
+                      }
                     }
                   }}
                 />
