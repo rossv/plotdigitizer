@@ -1,5 +1,4 @@
-
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { Plus, ScanLine, Image as ImageIcon, Sun, Moon, Trash2, Download, Database, Undo, Redo, Camera, Copy, ImageOff, Save, FolderOpen, X, MousePointer2, Magnet, HelpCircle, MapPin, Check, CheckCircle2, Wand2, Sparkles, Activity, RefreshCw } from 'lucide-react';
 import { DigitizerCanvas } from './DigitizerCanvas';
 import type { DigitizerHandle } from './DigitizerCanvas';
@@ -7,43 +6,43 @@ import { useStore } from './store';
 import { SnappingTool } from './components/SnappingTool';
 import { HelpModal } from './components/HelpModal';
 import { GlobalModal } from './components/GlobalModal';
-import testPlotUrl from './assets/test_plot.svg';
 import { generateTableData, downloadCSV } from './utils/export';
-import { loadPdfDocument } from './utils/pdf-utils';
 import { PdfPageSelector } from './components/PdfPageSelector';
 import { HistoryList } from './components/HistoryList';
-import * as pdfjsLib from 'pdfjs-dist';
 import { useAutoAnimate } from '@formkit/auto-animate/react';
+import { MainLayout } from './components/Layout/MainLayout';
+import { useFileHandler } from './hooks/useFileHandler';
+import { useGlobalShortcuts } from './hooks/useGlobalShortcuts';
+import { useProject } from './hooks/useProject';
+import { useExport } from './hooks/useExport';
 
 export default function App() {
   const digitizerRef = useRef<DigitizerHandle>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const [pdfDocument, setPdfDocument] = React.useState<pdfjsLib.PDFDocumentProxy | null>(null);
-  const [isSnappingToolOpen, setIsSnappingToolOpen] = React.useState(false);
-  const [isHelpOpen, setIsHelpOpen] = React.useState(false);
-  const [isHistoryOpen, setIsHistoryOpen] = React.useState(false);
+  const [isSnappingToolOpen, setIsSnappingToolOpen] = useState(false);
+  const [isHelpOpen, setIsHelpOpen] = useState(false);
+  const [isHistoryOpen, setIsHistoryOpen] = useState(false);
   const [yAxesParent] = useAutoAnimate();
   const [seriesSettingsParent] = useAutoAnimate();
+  const [copySuccess, setCopySuccess] = useState(false);
 
-  // Feedback States
-  const [saveSuccess, setSaveSuccess] = React.useState(false);
-  const [copySuccess, setCopySuccess] = React.useState(false);
-  const [exportSuccess, setExportSuccess] = React.useState(false);
-  const [exportGraphicsSuccess, setExportGraphicsSuccess] = React.useState(false);
+  // Custom Hooks
+  useGlobalShortcuts();
+  const { pdfDocument, setPdfDocument, handleFile, loadTestImage } = useFileHandler();
+  const { handleSaveProject, handleLoadProject, saveSuccess } = useProject();
+  const { handleExportImage, exportSuccess, exportGraphicsSuccess } = useExport(digitizerRef);
 
+  // Store
   const {
     activeWorkspaceId,
     workspaces,
     setActiveWorkspace,
     addWorkspace,
     removeWorkspace,
-    updateWorkspaceName, // This was missing in the destructure
+    updateWorkspaceName,
     theme,
     toggleTheme,
-    loadProject,
     openModal,
-
-    // Actions
     setImageUrl,
     setMode,
     addSeries,
@@ -64,8 +63,6 @@ export default function App() {
     updateSeriesColor,
     clearSeriesPoints,
     toggleSeriesLabels,
-    deleteSelectedPoints,
-    nudgeSelection,
     toggleSeriesPointCoordinates,
     startCalibration,
     resampleActiveSeries,
@@ -75,6 +72,7 @@ export default function App() {
   } = useStore();
 
   const activeWorkspace = workspaces.find(w => w.id === activeWorkspaceId);
+
   // Fail-safe
   if (!activeWorkspace) {
     if (workspaces.length > 0) setActiveWorkspace(workspaces[0].id);
@@ -94,8 +92,6 @@ export default function App() {
   const activeSeries = series.find((s) => s.id === activeSeriesId);
   const activeSeriesYAxis = yAxes.find((y) => y.id === activeSeries?.yAxisId)?.calibration;
 
-
-
   const isCalibrated =
     xAxis.slope !== null && Number.isFinite(xAxis.slope) &&
     xAxis.intercept !== null && Number.isFinite(xAxis.intercept) &&
@@ -103,232 +99,26 @@ export default function App() {
     activeSeriesYAxis.slope !== null && Number.isFinite(activeSeriesYAxis.slope) &&
     activeSeriesYAxis.intercept !== null && Number.isFinite(activeSeriesYAxis.intercept);
 
-  // Force IDLE mode if calibration becomes invalid (e.g. cleared inputs or error)
+  // Force IDLE mode if calibration becomes invalid
   useEffect(() => {
     if (!isCalibrated && mode !== 'IDLE' && mode !== 'CALIBRATE_X' && mode !== 'CALIBRATE_Y') {
       setMode('IDLE');
     }
   }, [isCalibrated, mode, setMode]);
 
-  const handleFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files?.[0]) {
-      const file = e.target.files[0];
-      const url = URL.createObjectURL(file);
-
-      if (file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf')) {
-        try {
-          const pdf = await loadPdfDocument(url);
-          setPdfDocument(pdf);
-        } catch (error) {
-          console.error("Failed to load PDF", error);
-          openModal({ type: 'alert', message: "Failed to load PDF file is it valid?" });
-        }
-      } else {
-        setImageUrl(url);
-      }
-    }
-  };
-
-  const loadTestImage = async () => {
-    try {
-      const response = await fetch(testPlotUrl);
-      const blob = await response.blob();
-      const url = URL.createObjectURL(blob);
-      setImageUrl(url);
-    } catch (e) {
-      console.error("Failed to load test image", e);
-    }
-  };
-
-  const handleExportImage = (graphicsOnly = false) => {
-    if (digitizerRef.current) {
-      const dataUrl = digitizerRef.current.toDataURL({ graphicsOnly });
-      if (dataUrl) {
-        const link = document.createElement('a');
-        link.download = graphicsOnly ? 'digitized_graphics.png' : 'digitized_plot.png';
-        link.href = dataUrl;
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
-
-        // Feedback
-        if (graphicsOnly) {
-          setExportGraphicsSuccess(true);
-          setTimeout(() => setExportGraphicsSuccess(false), 2000);
-        } else {
-          setExportSuccess(true);
-          setTimeout(() => setExportSuccess(false), 2000);
-        }
-      }
-    }
-  };
-
-  const handleSaveProject = async () => {
-    const state = useStore.getState();
-    const { workspaces, activeWorkspaceId, theme } = state;
-
-    // Process all workspaces to convert blob URLs to base64 if needed
-    const processedWorkspaces = await Promise.all(workspaces.map(async (ws) => {
-      let base64Image = ws.imageUrl;
-      if (ws.imageUrl && ws.imageUrl.startsWith('blob:')) {
-        try {
-          const resp = await fetch(ws.imageUrl);
-          const blob = await resp.blob();
-          base64Image = await new Promise((resolve) => {
-            const reader = new FileReader();
-            reader.onloadend = () => resolve(reader.result as string);
-            reader.readAsDataURL(blob);
-          });
-        } catch (e) {
-          console.error(`Failed to convert image for workspace ${ws.name}`, e);
-        }
-      }
-      return { ...ws, imageUrl: base64Image };
-    }));
-
-    const projectData = {
-      version: 2, // Increment version
-      createdAt: new Date().toISOString(),
-      workspaces: processedWorkspaces,
-      activeWorkspaceId,
-      theme
-    };
-
-    const blob = new Blob([JSON.stringify(projectData, null, 2)], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.download = `plot_digitizer_project_${new Date().toISOString().slice(0, 10)}.json`;
-    link.href = url;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-
-
-    // Feedback
-    setSaveSuccess(true);
-    setTimeout(() => setSaveSuccess(false), 2000);
-  };
-
-  const handleLoadProject = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-
-    const reader = new FileReader();
-    reader.onload = (event) => {
-      try {
-        const json = JSON.parse(event.target?.result as string);
-        const isLegacy = json.xAxis && json.yAxes && json.series;
-        const isNew = Array.isArray(json.workspaces);
-
-        if (!isLegacy && !isNew) {
-          openModal({ type: 'alert', message: "Invalid project file: missing core data" });
-          return;
-        }
-        loadProject(json);
-      } catch (err) {
-        console.error("Failed to parse project file", err);
-        openModal({ type: 'alert', message: "Failed to load project file" });
-      }
-    };
-    reader.readAsText(file);
-    e.target.value = '';
-  };
-
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      // Check for global modal state first using getState() to avoid dependency cycles or stale state
-      const state = useStore.getState();
-      if (state.modal.isOpen) return;
-
-      if ((e.metaKey || e.ctrlKey) && e.key === 'z') {
-        e.preventDefault();
-        if (e.shiftKey) {
-          redo();
-        } else {
-          undo();
-        }
-      } else if ((e.metaKey || e.ctrlKey) && e.key === 'y') {
-        e.preventDefault();
-        redo();
-      } else if (e.key === 'Delete' || e.key === 'Backspace') {
-        const activeTag = document.activeElement?.tagName.toLowerCase();
-        if (activeTag === 'input' || activeTag === 'textarea') return;
-
-        e.preventDefault();
-        deleteSelectedPoints();
-      } else if (e.key.startsWith('Arrow')) {
-        const activeTag = document.activeElement?.tagName.toLowerCase();
-        if (activeTag === 'input' || activeTag === 'textarea') return;
-
-        e.preventDefault();
-        const step = e.shiftKey ? 10 : 1; // Shift for faster nudge
-        let dx = 0;
-        let dy = 0;
-        if (e.key === 'ArrowUp') dy = -step;
-        if (e.key === 'ArrowDown') dy = step;
-        if (e.key === 'ArrowLeft') dx = -step;
-        if (e.key === 'ArrowRight') dx = step;
-        nudgeSelection(dx, dy);
-      } else if (e.key === 'Escape') {
-        // Cancel Action / Clear Selection
-        const ws = state.workspaces.find(w => w.id === state.activeWorkspaceId);
-        if (!ws) return;
-
-        // 1. Priority: Clear Point Selection
-        if (ws.selectedPointIds.length > 0) {
-          state.clearSelection();
-          return;
-        }
-
-        // 2. Priority: Cancel any active mode (including Digitize) -> Return to IDLE
-        if (ws.mode !== 'IDLE') {
-          setMode('IDLE');
-        }
-      }
-    };
-
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [undo, redo, deleteSelectedPoints, nudgeSelection, setMode]); // Added setMode dependency
-
-  // Handle paste events
-  useEffect(() => {
-    const handlePaste = (e: ClipboardEvent) => {
-      if (e.clipboardData?.items) {
-        const items = e.clipboardData.items;
-        for (let i = 0; i < items.length; i++) {
-          if (items[i].type.indexOf('image') !== -1) {
-            const file = items[i].getAsFile();
-            if (file) {
-              const url = URL.createObjectURL(file);
-              setImageUrl(url);
-              break;
-            }
-          }
-        }
-      }
-    };
-
-    window.addEventListener('paste', handlePaste);
-    return () => window.removeEventListener('paste', handlePaste);
-  }, [setImageUrl]);
-
   // Apply theme class to html element on mount
   useEffect(() => {
-    console.log('Theme effect running. Theme:', theme);
     if (theme === 'dark') {
       document.documentElement.classList.add('dark');
-      console.log('Added dark class. ClassList:', document.documentElement.classList.toString());
     } else {
       document.documentElement.classList.remove('dark');
-      console.log('Removed dark class. ClassList:', document.documentElement.classList.toString());
     }
   }, [theme]);
 
   const isXCalibrated = xAxis.slope !== null && !isNaN(xAxis.slope);
 
   return (
-    <div className="flex h-screen w-screen bg-slate-100 dark:bg-slate-950 transition-colors duration-300">
+    <MainLayout>
       <aside className="w-96 p-4 flex flex-col gap-4 overflow-hidden z-20 relative">
 
         {/* Header Bin */}
@@ -365,15 +155,11 @@ export default function App() {
           </div>
         </div>
 
-
-
         {/* Controls Container - Scrollable */}
         <div className="flex-1 flex flex-col gap-4 overflow-y-auto pr-1">
 
           {/* File & History Bin */}
           <div className="p-4 bg-white dark:bg-slate-900 rounded-2xl shadow-md border border-slate-200 dark:border-slate-800 space-y-3 transition-all hover:shadow-lg animate-slide-up" style={{ animationDelay: '0.1s' }}>
-
-
             <div className="grid grid-cols-2 gap-2">
               <button
                 onClick={handleSaveProject}
@@ -836,9 +622,8 @@ export default function App() {
                     </div>
                   )}
                 </div>
-              </div >
-            )
-            }
+              </div>
+            )}
 
             <div className="grid grid-cols-2 gap-2 pt-2">
               <button
@@ -947,10 +732,10 @@ export default function App() {
                 Resample
               </button>
             </div>
-          </div >
+          </div>
 
           {/* Points Bin */}
-          < div className="flex-1 min-h-[400px] p-4 bg-white dark:bg-slate-900 rounded-2xl shadow-md border border-slate-200 dark:border-slate-800 flex flex-col transition-all hover:shadow-lg animate-slide-up" style={{ animationDelay: '0.4s' }}>
+          <div className="flex-1 min-h-[400px] p-4 bg-white dark:bg-slate-900 rounded-2xl shadow-md border border-slate-200 dark:border-slate-800 flex flex-col transition-all hover:shadow-lg animate-slide-up" style={{ animationDelay: '0.4s' }}>
             <div className="flex items-center justify-between mb-2">
               <h3 className="font-semibold text-slate-800 dark:text-slate-200 text-sm">Points <span className="ml-1 text-xs font-normal text-slate-400">({series.reduce((acc, s) => acc + s.points.length, 0)})</span></h3>
               <div className="flex gap-1">
@@ -1071,10 +856,10 @@ export default function App() {
                 </table>
               </div>
             </div>
-          </div >
+          </div>
 
-        </div >
-      </aside >
+        </div>
+      </aside>
 
       <div className="flex-1 h-full overflow-hidden relative bg-slate-100 dark:bg-slate-950">
         <div className="absolute inset-4 rounded-2xl overflow-hidden shadow-sm hover:shadow-md transition-all duration-500 border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 flex flex-col animate-scale-in">
@@ -1112,7 +897,8 @@ export default function App() {
               />
             </div>
             <div className="w-px h-4 bg-slate-200 dark:bg-slate-700 mx-1" />
-            {/* Workspace Tabs moved here */}
+
+            {/* Workspace Tabs */}
             <div className="flex-1 flex items-center gap-1 overflow-x-auto scrollbar-hide pl-1">
               {workspaces.map(ws => (
                 <div
@@ -1188,7 +974,6 @@ export default function App() {
         onClose={() => setIsHelpOpen(false)}
       />
       <GlobalModal />
-    </div >
+    </MainLayout>
   );
 }
-

@@ -2,6 +2,17 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.3.0] - 2025-12-20
+
+### Refactored
+- **Architectural Overhaul**:
+  - Split monolithic `store.ts` into modular Zustand slices (`uiSlice`, `workspaceSlice`, `calibrationSlice`, `dataSlice`).
+  - Refactored `App.tsx` by extracting core logic into custom hooks (`useFileHandler`, `useGlobalShortcuts`, `useProject`, `useExport`).
+  - Created dedicated `MainLayout` component for better separation of concerns.
+- **Improved Codebase**:
+  - Enhanced type safety and directory structure.
+  - Reduced component complexity for better maintainability.
+
 ## [0.2.0] - 2025-12-14
 
 ### Added
