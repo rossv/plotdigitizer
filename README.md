@@ -88,6 +88,20 @@ The app supports deployment to root paths or subpaths (e.g., GitHub Pages).
   BASE_URL=/my-app/ npm run build
   ```
 
+### GitHub Pages
+
+This project includes scripts for deploying the built site to GitHub Pages:
+
+- Build and publish with one command:
+  ```bash
+  npm run deploy
+  ```
+  The `predeploy` script automatically runs the production build before publishing the `dist` directory.
+- Build only (useful for verifying output before publishing):
+  ```bash
+  npm run build
+  ```
+
 ## Tech Stack
 
 - **Framework**: React 19 + Vite
