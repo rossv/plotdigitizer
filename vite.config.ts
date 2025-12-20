@@ -12,8 +12,12 @@ export default defineConfig({
   define: {
     __APP_VERSION__: JSON.stringify(packageJson.version),
   },
-  base:
-    process.env.VITE_BASE_PATH ??
-    process.env.BASE_URL ??
-    '/'
+  base: (() => {
+    const repoSlug = 'plotdigitizer'
+    const githubRepository = process.env.GITHUB_REPOSITORY
+    const isUserOrOrgPage = githubRepository?.endsWith('.github.io')
+    const defaultBase = isUserOrOrgPage ? '/' : `/${repoSlug}/`
+
+    return process.env.VITE_BASE_PATH ?? process.env.BASE_URL ?? defaultBase
+  })(),
 })
