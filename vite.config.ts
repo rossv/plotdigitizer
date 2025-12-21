@@ -13,8 +13,9 @@ export default defineConfig({
     __APP_VERSION__: JSON.stringify(packageJson.version),
   },
   base: (() => {
-    const repoSlug = 'plotdigitizer'
     const githubRepository = process.env.GITHUB_REPOSITORY
+    const repoSlug =
+      githubRepository?.split('/')?.[1] || packageJson.name || 'plotdigitizer'
     const isUserOrOrgPage = githubRepository?.endsWith('.github.io')
     const defaultBase = isUserOrOrgPage ? '/' : `/${repoSlug}/`
 
