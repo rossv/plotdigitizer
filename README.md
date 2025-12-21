@@ -88,6 +88,13 @@ The app supports deployment to root paths or subpaths (e.g., GitHub Pages).
   BASE_URL=/my-app/ npm run build
   ```
 
+### GitHub Pages
+
+- Set the `base` value in [`vite.config.ts`](./vite.config.ts) to match your repository path (for example, `/plotdigitizer/`) so assets resolve correctly when served from a subpath.
+- In your repository **Settings → Pages**, enable GitHub Pages and point it to the `gh-pages` branch (root). This branch is created by the deploy script or the workflow below.
+- Publish manually with `npm run deploy` (runs the build and pushes `dist` to `gh-pages`) or rely on the existing GitHub Actions workflow at [`.github/workflows/deploy.yml`](./.github/workflows/deploy.yml), which builds and deploys on pushes to `main`.
+- The published site is available at `https://<user>.github.io/<repo>/` once the Pages configuration is active.
+
 ## Tech Stack
 
 - **Framework**: React 19 + Vite
