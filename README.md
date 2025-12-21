@@ -102,6 +102,11 @@ This project includes scripts for deploying the built site to GitHub Pages:
   npm run build
   ```
 
+After publishing (either via `npm run deploy` or the GitHub Actions workflow), set your repository’s GitHub Pages source to the `gh-pages` branch in **Settings → Pages** with the root (`/`) folder. The published site will be available at:
+
+- **Project page:** `https://<user>.github.io/<repo>/` (e.g., `https://<user>.github.io/plotdigitizer/`)
+- **User/Org page:** `https://<user>.github.io/` (if the repository name ends with `.github.io`, the base path is `/`)
+
 ## Tech Stack
 
 - **Framework**: React 19 + Vite
