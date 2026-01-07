@@ -481,10 +481,15 @@ export const DigitizerCanvas = forwardRef<DigitizerHandle, DigitizerCanvasProps>
       <div ref={containerRef} className="flex-1 h-full w-full overflow-hidden relative bg-transparent">
         {!imageUrl && (
           <div
-            onClick={onLoadImage}
-            className="absolute inset-0 z-50 flex flex-col items-center justify-center text-slate-400 cursor-pointer hover:bg-slate-50/50 dark:hover:bg-slate-900/50 transition-colors"
+            className="absolute inset-0 z-50 flex flex-col items-center justify-center text-slate-400 pointer-events-none"
           >
-            <div className="p-8 rounded-2xl border-2 border-dashed border-slate-300 dark:border-slate-700 flex flex-col items-center gap-3 bg-slate-50/50 dark:bg-slate-900/50 hover:bg-white dark:hover:bg-slate-900 transition-colors shadow-sm">
+            <div
+              onClick={(e) => {
+                e.stopPropagation();
+                if (onLoadImage) onLoadImage();
+              }}
+              className="p-8 rounded-2xl border-2 border-dashed border-slate-300 dark:border-slate-700 flex flex-col items-center gap-3 bg-slate-50/50 dark:bg-slate-900/50 hover:bg-white dark:hover:bg-slate-900 transition-colors shadow-sm pointer-events-auto cursor-pointer"
+            >
               <div className="p-3 bg-blue-50 dark:bg-blue-900/20 rounded-full text-blue-500 mb-1">
                 <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect width="18" height="18" x="3" y="3" rx="2" ry="2" /><circle cx="9" cy="9" r="2" /><path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21" /></svg>
               </div>

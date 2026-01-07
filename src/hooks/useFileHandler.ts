@@ -8,24 +8,27 @@ export function useFileHandler() {
     const { setImageUrl, openModal } = useStore();
     const [pdfDocument, setPdfDocument] = useState<PDFDocumentProxy | null>(null);
 
-    const handleFile = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
-        if (e.target.files?.[0]) {
-            const file = e.target.files[0];
-            const url = URL.createObjectURL(file);
+    const processFile = useCallback(async (file: File) => {
+        const url = URL.createObjectURL(file);
 
-            if (file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf')) {
-                try {
-                    const pdf = await loadPdfDocument(url);
-                    setPdfDocument(pdf);
-                } catch (error) {
-                    console.error("Failed to load PDF", error);
-                    openModal({ type: 'alert', message: "Failed to load PDF file is it valid?" });
-                }
-            } else {
-                setImageUrl(url);
+        if (file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf')) {
+            try {
+                const pdf = await loadPdfDocument(url);
+                setPdfDocument(pdf);
+            } catch (error) {
+                console.error("Failed to load PDF", error);
+                openModal({ type: 'alert', message: "Failed to load PDF file is it valid?" });
             }
+        } else {
+            setImageUrl(url);
         }
     }, [setImageUrl, openModal]);
+
+    const handleFile = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
+        if (e.target.files?.[0]) {
+            await processFile(e.target.files[0]);
+        }
+    }, [processFile]);
 
     const loadTestImage = useCallback(async () => {
         try {
@@ -42,6 +45,7 @@ export function useFileHandler() {
         pdfDocument,
         setPdfDocument,
         handleFile,
+        processFile,
         loadTestImage
     };
 }
