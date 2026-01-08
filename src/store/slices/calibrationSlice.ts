@@ -29,7 +29,10 @@ export const createCalibrationSlice: StoreSlice<CalibrationSlice> = (set) => ({
                     return updateSeriesFit({ ...s, points: updatedPoints });
                 });
 
-                return { xAxis: newXAxis, series: updatedSeries };
+                const newHistory = ws.history ? ws.history.slice(0, ws.historyIndex + 1) : [];
+                newHistory.push({ series: updatedSeries, yAxes: ws.yAxes, xAxis: newXAxis, description: 'Toggle X Log' });
+
+                return { xAxis: newXAxis, series: updatedSeries, history: newHistory, historyIndex: newHistory.length - 1 };
             } catch (e) {
                 console.error("Failed to recalculate X calibration on toggle", e);
                 return { xAxis: newXAxis };
@@ -116,7 +119,10 @@ export const createCalibrationSlice: StoreSlice<CalibrationSlice> = (set) => ({
             return updateSeriesFit({ ...s, points: updatedPoints });
         });
 
-        return { yAxes: updatedYAxes, series: updatedSeries };
+        const newHistory = ws.history ? ws.history.slice(0, ws.historyIndex + 1) : [];
+        newHistory.push({ series: updatedSeries, yAxes: updatedYAxes, xAxis: ws.xAxis, description: 'Toggle Y Log' });
+
+        return { yAxes: updatedYAxes, series: updatedSeries, history: newHistory, historyIndex: newHistory.length - 1 };
     })),
 
     setPendingCalibrationPoint: (point) => set(state => updateActiveWorkspace(state, () => ({ pendingCalibrationPoint: point }))),
@@ -170,7 +176,10 @@ export const createCalibrationSlice: StoreSlice<CalibrationSlice> = (set) => ({
                         return updateSeriesFit({ ...s, points: updatedPoints });
                     });
 
-                    return { xAxis: newAxis, pendingCalibrationPoint: null, mode: 'IDLE', series: updatedSeries };
+                    const newHistory = ws.history ? ws.history.slice(0, ws.historyIndex + 1) : [];
+                    newHistory.push({ series: updatedSeries, yAxes: ws.yAxes, xAxis: newAxis, description: 'Calibrate X' });
+
+                    return { xAxis: newAxis, pendingCalibrationPoint: null, mode: 'IDLE', series: updatedSeries, history: newHistory, historyIndex: newHistory.length - 1 };
                 } catch (e) {
                     console.error(e);
                 }
@@ -203,8 +212,6 @@ export const createCalibrationSlice: StoreSlice<CalibrationSlice> = (set) => ({
             const activeAxis = updatedYAxes.find(a => a.id === ws.activeYAxisId);
             const isComplete = p.step === 2 && activeAxis?.calibration.p1 && activeAxis?.calibration.p2;
 
-            let extraUpdates = {};
-
             if (isComplete && activeAxis) {
                 const updatedSeries = ws.series.map(s => {
                     const seriesYAxis = updatedYAxes.find(y => y.id === s.yAxisId)?.calibration;
@@ -214,13 +221,23 @@ export const createCalibrationSlice: StoreSlice<CalibrationSlice> = (set) => ({
                     });
                     return updateSeriesFit({ ...s, points: updatedPoints });
                 });
-                extraUpdates = { series: updatedSeries, mode: 'IDLE' };
+
+                const newHistory = ws.history ? ws.history.slice(0, ws.historyIndex + 1) : [];
+                newHistory.push({ series: updatedSeries, yAxes: updatedYAxes, xAxis: ws.xAxis, description: 'Calibrate Y' });
+
+                return {
+                    yAxes: updatedYAxes,
+                    pendingCalibrationPoint: null,
+                    series: updatedSeries,
+                    mode: 'IDLE',
+                    history: newHistory,
+                    historyIndex: newHistory.length - 1
+                };
             }
 
             return {
                 yAxes: updatedYAxes,
                 pendingCalibrationPoint: null,
-                ...extraUpdates
             };
         }
     })),

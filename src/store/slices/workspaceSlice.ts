@@ -54,7 +54,7 @@ export const createWorkspaceSlice: StoreSlice<WorkspaceSlice> = (set, get) => ({
                 }
             });
             // Ensure history is initialized
-            ws.history = [{ series: ws.series, yAxes: ws.yAxes, description: 'Initial State' }];
+            ws.history = [{ series: ws.series, yAxes: ws.yAxes, xAxis: ws.xAxis, description: 'Initial State' }];
             ws.historyIndex = 0;
 
             newWorkspaces = [ws];

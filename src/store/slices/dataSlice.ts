@@ -60,7 +60,7 @@ export const createDataSlice: StoreSlice<DataSlice> = (set) => ({
             return updateSeriesFit({ ...s, points: [] });
         });
         const newHistory = ws.history ? ws.history.slice(0, ws.historyIndex + 1) : [];
-        newHistory.push({ series: updatedSeries, yAxes: ws.yAxes, description: 'Clear Series Points' });
+        newHistory.push({ series: updatedSeries, yAxes: ws.yAxes, xAxis: ws.xAxis, description: 'Clear Series Points' });
 
         return {
             series: updatedSeries,
@@ -135,7 +135,7 @@ export const createDataSlice: StoreSlice<DataSlice> = (set) => ({
         });
 
         const newHistory = ws.history ? ws.history.slice(0, ws.historyIndex + 1) : [];
-        newHistory.push({ series: updatedSeries, yAxes: ws.yAxes, description: 'Resample Series' });
+        newHistory.push({ series: updatedSeries, yAxes: ws.yAxes, xAxis: ws.xAxis, description: 'Resample Series' });
 
         return {
             series: updatedSeries,
@@ -172,7 +172,7 @@ export const createDataSlice: StoreSlice<DataSlice> = (set) => ({
         });
 
         const newHistory = ws.history ? ws.history.slice(0, ws.historyIndex + 1) : [];
-        newHistory.push({ series: updatedSeries, yAxes: ws.yAxes, description: 'Add Point' });
+        newHistory.push({ series: updatedSeries, yAxes: ws.yAxes, xAxis: ws.xAxis, description: 'Add Point' });
 
         return {
             series: updatedSeries,
@@ -237,7 +237,7 @@ export const createDataSlice: StoreSlice<DataSlice> = (set) => ({
         });
 
         const newHistory = ws.history ? ws.history.slice(0, ws.historyIndex + 1) : [];
-        newHistory.push({ series: updatedSeries, yAxes: ws.yAxes, description: 'Add Points' });
+        newHistory.push({ series: updatedSeries, yAxes: ws.yAxes, xAxis: ws.xAxis, description: 'Add Points' });
 
         return {
             series: updatedSeries,
@@ -264,7 +264,7 @@ export const createDataSlice: StoreSlice<DataSlice> = (set) => ({
         });
 
         const newHistory = ws.history ? ws.history.slice(0, ws.historyIndex + 1) : [];
-        newHistory.push({ series: updatedSeries, yAxes: ws.yAxes, description: 'Delete Point' });
+        newHistory.push({ series: updatedSeries, yAxes: ws.yAxes, xAxis: ws.xAxis, description: 'Delete Point' });
 
         return {
             series: updatedSeries,
@@ -282,6 +282,7 @@ export const createDataSlice: StoreSlice<DataSlice> = (set) => ({
         return {
             series: ws.history[newIndex].series,
             yAxes: ws.history[newIndex].yAxes,
+            xAxis: ws.history[newIndex].xAxis,
             historyIndex: newIndex
         };
     })),
@@ -292,6 +293,7 @@ export const createDataSlice: StoreSlice<DataSlice> = (set) => ({
         return {
             series: ws.history[newIndex].series,
             yAxes: ws.history[newIndex].yAxes,
+            xAxis: ws.history[newIndex].xAxis,
             historyIndex: newIndex
         };
     })),
@@ -301,6 +303,7 @@ export const createDataSlice: StoreSlice<DataSlice> = (set) => ({
         return {
             series: ws.history[index].series,
             yAxes: ws.history[index].yAxes,
+            xAxis: ws.history[index].xAxis,
             historyIndex: index
         };
     })),
@@ -341,7 +344,7 @@ export const createDataSlice: StoreSlice<DataSlice> = (set) => ({
         const updatedSinglePoints = ws.singlePoints.filter(p => !ws.selectedPointIds.includes(p.id));
 
         const newHistory = ws.history ? ws.history.slice(0, ws.historyIndex + 1) : [];
-        newHistory.push({ series: updatedSeries, yAxes: ws.yAxes, description: 'Delete Selection' });
+        newHistory.push({ series: updatedSeries, yAxes: ws.yAxes, xAxis: ws.xAxis, description: 'Delete Selection' });
 
         return {
             series: updatedSeries,
@@ -403,7 +406,7 @@ export const createDataSlice: StoreSlice<DataSlice> = (set) => ({
         });
 
         const newHistory = ws.history ? ws.history.slice(0, ws.historyIndex + 1) : [];
-        newHistory.push({ series: updatedSeries, yAxes: ws.yAxes, description: 'Move Point' });
+        newHistory.push({ series: updatedSeries, yAxes: ws.yAxes, xAxis: ws.xAxis, description: 'Move Point' });
 
         return {
             series: updatedSeries,
@@ -449,7 +452,7 @@ export const createDataSlice: StoreSlice<DataSlice> = (set) => ({
         });
 
         const newHistory = ws.history ? ws.history.slice(0, ws.historyIndex + 1) : [];
-        newHistory.push({ series: updatedSeries, yAxes: ws.yAxes, description: 'Nudge Selection' });
+        newHistory.push({ series: updatedSeries, yAxes: ws.yAxes, xAxis: ws.xAxis, description: 'Nudge Selection' });
 
         return {
             series: updatedSeries,
@@ -502,7 +505,7 @@ export const createDataSlice: StoreSlice<DataSlice> = (set) => ({
         });
 
         const newHistory = ws.history ? ws.history.slice(0, ws.historyIndex + 1) : [];
-        newHistory.push({ series: updatedSeries, yAxes: ws.yAxes, description: 'Snap Points' });
+        newHistory.push({ series: updatedSeries, yAxes: ws.yAxes, xAxis: ws.xAxis, description: 'Snap Points' });
 
         return {
             series: updatedSeries,
@@ -544,7 +547,7 @@ export const createDataSlice: StoreSlice<DataSlice> = (set) => ({
         });
 
         const newHistory = ws.history ? ws.history.slice(0, ws.historyIndex + 1) : [];
-        newHistory.push({ series: updatedSeries, yAxes: ws.yAxes, description: 'Snap to Curve' });
+        newHistory.push({ series: updatedSeries, yAxes: ws.yAxes, xAxis: ws.xAxis, description: 'Snap to Curve' });
 
         return {
             series: updatedSeries,

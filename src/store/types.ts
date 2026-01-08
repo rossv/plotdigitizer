@@ -30,7 +30,7 @@ export interface Workspace {
     activeSeriesId: string;
     pendingCalibrationPoint: { axis: 'X' | 'Y'; step: 1 | 2; px: number; py: number } | null;
     singlePoints: Point[];
-    history: { series: Series[]; yAxes: YAxisDefinition[]; description: string }[];
+    history: { series: Series[]; yAxes: YAxisDefinition[]; xAxis: AxisCalibration; description: string }[];
     historyIndex: number;
     selectedPointIds: string[];
 }
