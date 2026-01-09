@@ -139,31 +139,7 @@ export default function App() {
     };
   }, [processFile]);
 
-  // Global Paste Listener
-  useEffect(() => {
-    const handlePaste = (e: ClipboardEvent) => {
-      if (e.clipboardData?.items) {
-        for (let i = 0; i < e.clipboardData.items.length; i++) {
-          const item = e.clipboardData.items[i];
-          if (item.type.indexOf('image') !== -1) {
-            e.preventDefault();
-            const file = item.getAsFile();
-            if (file) {
-              const { processFile } = useFileHandler();
-              // Note: using hook inside callback is not allowed, so we need to capture it from outside
-              // But hooks must be called at top level.
-              // So we need to put the handler logic inside the hook or pass the function here.
-              // Wait, I can just use the function returned by the hook instance in component scope.
-            }
-          }
-        }
-      }
-    };
 
-    // Correct implementation:
-    // The listener needs access to `processFile`.
-    // We can define the listener inside the component where we have access to `processFile`.
-  }, [theme]); // Wait, this is the wrong place. I need to redo this block carefully.
 
   const isXCalibrated = xAxis.slope !== null && !isNaN(xAxis.slope);
 
