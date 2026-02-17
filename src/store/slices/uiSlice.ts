@@ -1,7 +1,23 @@
 import type { StoreSlice, UISlice } from '../types';
 
+const getInitialTheme = (): 'light' | 'dark' => {
+    const storageTheme = typeof globalThis.localStorage !== 'undefined'
+        ? globalThis.localStorage.getItem('theme')
+        : null;
+
+    if (storageTheme === 'light' || storageTheme === 'dark') {
+        return storageTheme;
+    }
+
+    const prefersDark = typeof globalThis.window !== 'undefined'
+        && typeof globalThis.window.matchMedia === 'function'
+        && globalThis.window.matchMedia('(prefers-color-scheme: dark)').matches;
+
+    return prefersDark ? 'dark' : 'light';
+};
+
 export const createUISlice: StoreSlice<UISlice> = (set) => ({
-    theme: (localStorage.getItem('theme') as 'light' | 'dark') || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'),
+    theme: getInitialTheme(),
     modal: {
         isOpen: false,
         type: 'alert',
@@ -10,7 +26,9 @@ export const createUISlice: StoreSlice<UISlice> = (set) => ({
 
     toggleTheme: () => set((state) => {
         const newTheme = state.theme === 'light' ? 'dark' : 'light';
-        localStorage.setItem('theme', newTheme);
+        if (typeof globalThis.localStorage !== 'undefined') {
+            globalThis.localStorage.setItem('theme', newTheme);
+        }
         return { theme: newTheme };
     }),
 
