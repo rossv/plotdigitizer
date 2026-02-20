@@ -25,6 +25,24 @@ export default function App() {
   const [yAxesParent] = useAutoAnimate();
   const [seriesSettingsParent] = useAutoAnimate();
   const [copySuccess, setCopySuccess] = useState(false);
+  const [showMobilePortraitWarning, setShowMobilePortraitWarning] = useState(false);
+
+  useEffect(() => {
+    const mediaQuery = window.matchMedia('(max-width: 768px) and (orientation: portrait)');
+
+    const updateWarningVisibility = () => {
+      setShowMobilePortraitWarning(mediaQuery.matches);
+    };
+
+    updateWarningVisibility();
+    mediaQuery.addEventListener('change', updateWarningVisibility);
+    window.addEventListener('orientationchange', updateWarningVisibility);
+
+    return () => {
+      mediaQuery.removeEventListener('change', updateWarningVisibility);
+      window.removeEventListener('orientationchange', updateWarningVisibility);
+    };
+  }, []);
 
   // Custom Hooks
   useGlobalShortcuts();
@@ -142,6 +160,19 @@ export default function App() {
 
 
   const isXCalibrated = xAxis.slope !== null && !isNaN(xAxis.slope);
+
+  if (showMobilePortraitWarning) {
+    return (
+      <div className="flex h-screen w-screen items-center justify-center bg-slate-100 p-6 text-center dark:bg-slate-950">
+        <div className="max-w-sm rounded-2xl border border-slate-200 bg-white p-6 shadow-lg dark:border-slate-800 dark:bg-slate-900">
+          <h1 className="text-xl font-semibold text-slate-900 dark:text-white">Best viewed in landscape</h1>
+          <p className="mt-3 text-sm text-slate-600 dark:text-slate-300">
+            Plot Digitizer is difficult to use on a phone in portrait mode. Rotate your device to landscape or use a larger screen for a better experience.
+          </p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <MainLayout>
