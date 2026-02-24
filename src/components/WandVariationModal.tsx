@@ -25,7 +25,7 @@ export const WandVariationModal: React.FC<WandVariationModalProps> = ({
 
     useEffect(() => {
         if (isOpen && imageData) {
-            setLoading(true);
+            setTimeout(() => setLoading(true), 0);
             // Run in timeout to let UI render the modal first
             setTimeout(() => {
                 const vars = generateWandVariations(imageData, seed);
@@ -35,10 +35,18 @@ export const WandVariationModal: React.FC<WandVariationModalProps> = ({
                 if (vars.length > 0) setSelectedIdx(0);
             }, 50);
         } else {
-            setVariations([]);
-            setSelectedIdx(null);
+            setTimeout(() => {
+                setVariations([]);
+                setSelectedIdx(null);
+            }, 0);
         }
     }, [isOpen, imageData, seed]);
+
+    const handleConfirm = React.useCallback(() => {
+        if (selectedIdx !== null && variations[selectedIdx]) {
+            onSelect(variations[selectedIdx].points);
+        }
+    }, [selectedIdx, variations, onSelect]);
 
     // Global Keyboard Interaction
     useEffect(() => {
@@ -56,15 +64,9 @@ export const WandVariationModal: React.FC<WandVariationModalProps> = ({
         };
         window.addEventListener('keydown', handleKeys, { capture: true });
         return () => window.removeEventListener('keydown', handleKeys, { capture: true });
-    }, [isOpen, selectedIdx, variations, onClose]); // Dependencies for closure stability
+    }, [isOpen, handleConfirm, onClose]); // Dependencies for closure stability
 
     if (!isOpen) return null;
-
-    const handleConfirm = () => {
-        if (selectedIdx !== null && variations[selectedIdx]) {
-            onSelect(variations[selectedIdx].points);
-        }
-    };
 
     return (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">

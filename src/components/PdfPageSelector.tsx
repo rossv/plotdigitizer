@@ -50,7 +50,7 @@ export const PdfPageSelector: React.FC<PdfPageSelectorProps> = ({ pdfDocument, o
         if (currentPage < totalPages) setCurrentPage(p => p + 1);
     };
 
-    const handleImport = async () => {
+    const handleImport = React.useCallback(async () => {
         setIsLoading(true);
         try {
             // High quality render for import
@@ -61,7 +61,7 @@ export const PdfPageSelector: React.FC<PdfPageSelectorProps> = ({ pdfDocument, o
             openModal({ type: 'alert', message: 'Failed to import page' });
             setIsLoading(false);
         }
-    };
+    }, [pdfDocument, currentPage, onSelectPage, openModal]);
 
     // Global Key Listener
     useEffect(() => {

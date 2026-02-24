@@ -10,7 +10,7 @@ export const CalibrationInput: React.FC = () => {
 
     useEffect(() => {
         if (pendingCalibrationPoint) {
-            setValue('');
+            setTimeout(() => setValue(''), 0);
             setTimeout(() => inputRef.current?.focus(), 50);
         }
     }, [pendingCalibrationPoint]);

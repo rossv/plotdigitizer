@@ -1,0 +1,112 @@
+
+> plot-digitizer@0.3.0 lint
+> eslint .
+
+
+C:\GitRepos\plotdigitizer\src\App.tsx
+  750:156  error  Unexpected constant condition  no-constant-condition
+
+C:\GitRepos\plotdigitizer\src\DigitizerCanvas.tsx
+  76:11  warning  The 'series' logical expression could make the dependencies of useMemo Hook (at line 435) change on every render. To fix this, wrap the initialization of 'series' in its own useMemo() Hook                                                             react-hooks/exhaustive-deps
+  79:11  warning  The 'selectedPointIds' logical expression could make the dependencies of useMemo Hook (at line 435) change on every render. Move it inside the useMemo callback. Alternatively, wrap the initialization of 'selectedPointIds' in its own useMemo() Hook  react-hooks/exhaustive-deps
+
+C:\GitRepos\plotdigitizer\src\components\CalibrationHandle.tsx
+  14:12  error    Unexpected any. Specify a different type                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              @typescript-eslint/no-explicit-any
+  15:12  error    Unexpected any. Specify a different type                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              @typescript-eslint/no-explicit-any
+  20:49  error    Unexpected any. Specify a different type                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              @typescript-eslint/no-explicit-any
+  31:38  warning  Compilation Skipped: `this` is not supported syntax
+
+React Compiler does not support compiling functions that use `this`.
+
+C:\GitRepos\plotdigitizer\src\components\CalibrationHandle.tsx:31:38
+  29 |             y={y}
+  30 |             draggable
+> 31 |             dragBoundFunc={function (this: any, pos: { x: number, y: number }) {
+     |                                      ^^^^^^^^^ `this` was used here
+  32 |                 const stage = this.getStage();
+  33 |                 if (!stage) return pos;
+  34 |  react-hooks/unsupported-syntax
+  31:44  error    Unexpected any. Specify a different type                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              @typescript-eslint/no-explicit-any
+  56:36  error    Unexpected any. Specify a different type                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              @typescript-eslint/no-explicit-any
+
+C:\GitRepos\plotdigitizer\src\components\CalibrationInput.tsx
+  13:13  error  Error: Calling setState synchronously within an effect can trigger cascading renders
+
+Effects are intended to synchronize state between React and external systems such as manually updating the DOM, state management libraries, or other platform APIs. In general, the body of an effect should do one or both of the following:
+* Update external systems with the latest state from React.
+* Subscribe for updates from some external system, calling setState in a callback function when external state changes.
+
+Calling setState synchronously within an effect body causes cascading renders that can hurt performance, and is not recommended. (https://react.dev/learn/you-might-not-need-an-effect).
+
+C:\GitRepos\plotdigitizer\src\components\CalibrationInput.tsx:13:13
+  11 |     useEffect(() => {
+  12 |         if (pendingCalibrationPoint) {
+> 13 |             setValue('');
+     |             ^^^^^^^^ Avoid calling setState() directly within an effect
+  14 |             setTimeout(() => inputRef.current?.focus(), 50);
+  15 |         }
+  16 |     }, [pendingCalibrationPoint]);  react-hooks/set-state-in-effect
+
+C:\GitRepos\plotdigitizer\src\components\GlobalModal.tsx
+  14:13  error  Error: Calling setState synchronously within an effect can trigger cascading renders
+
+Effects are intended to synchronize state between React and external systems such as manually updating the DOM, state management libraries, or other platform APIs. In general, the body of an effect should do one or both of the following:
+* Update external systems with the latest state from React.
+* Subscribe for updates from some external system, calling setState in a callback function when external state changes.
+
+Calling setState synchronously within an effect body causes cascading renders that can hurt performance, and is not recommended. (https://react.dev/learn/you-might-not-need-an-effect).
+
+C:\GitRepos\plotdigitizer\src\components\GlobalModal.tsx:14:13
+  12 |     useEffect(() => {
+  13 |         if (modal.isOpen && modal.type === 'prompt') {
+> 14 |             setInputValue(modal.defaultValue || '');
+     |             ^^^^^^^^^^^^^ Avoid calling setState() directly within an effect
+  15 |             // Focus input after a short delay to allow render
+  16 |             setTimeout(() => {
+  17 |                 inputRef.current?.focus();  react-hooks/set-state-in-effect
+
+C:\GitRepos\plotdigitizer\src\components\Magnifier.tsx
+    5:31  error    Unexpected any. Specify a different type                                                                                @typescript-eslint/no-explicit-any
+   75:32  error    Unexpected any. Specify a different type                                                                                @typescript-eslint/no-explicit-any
+  108:8   warning  React Hook React.useCallback has an unnecessary dependency: 'magPos'. Either exclude it or remove the dependency array  react-hooks/exhaustive-deps
+
+C:\GitRepos\plotdigitizer\src\components\PdfPageSelector.tsx
+  53:11  warning  The 'handleImport' function makes the dependencies of useEffect Hook (at line 79) change on every render. To fix this, wrap the definition of 'handleImport' in its own useCallback() Hook  react-hooks/exhaustive-deps
+
+C:\GitRepos\plotdigitizer\src\components\WandVariationModal.tsx
+  54:17  error    Error: Cannot access variable before it is declared
+
+`handleConfirm` is accessed before it is declared, which prevents the earlier access from updating when this value changes over time.
+
+C:\GitRepos\plotdigitizer\src\components\WandVariationModal.tsx:54:17
+  52 |                 e.preventDefault();
+  53 |                 e.stopPropagation();
+> 54 |                 handleConfirm();
+     |                 ^^^^^^^^^^^^^ `handleConfirm` accessed before it is declared
+  55 |             }
+  56 |         };
+  57 |         window.addEventListener('keydown', handleKeys, { capture: true });
+
+C:\GitRepos\plotdigitizer\src\components\WandVariationModal.tsx:63:5
+  61 |     if (!isOpen) return null;
+  62 |
+> 63 |     const handleConfirm = () => {
+     |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+> 64 |         if (selectedIdx !== null && variations[selectedIdx]) {
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+> 65 |             onSelect(variations[selectedIdx].points);
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+> 66 |         }
+     | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+> 67 |     };
+     | ^^^^^^^ `handleConfirm` is declared here
+  68 |
+  69 |     return (
+  70 |         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">  react-hooks/immutability
+  59:8   warning  React Hook useEffect has a missing dependency: 'handleConfirm'. Either include it or remove the dependency array                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        react-hooks/exhaustive-deps
+
+C:\GitRepos\plotdigitizer\src\store\slices\workspaceSlice.ts
+  52:21  error  Include a description after the "@ts-expect-error" directive to explain why the @ts-expect-error is necessary. The description must be 3 characters or longer  @typescript-eslint/ban-ts-comment
+
+✖ 18 problems (12 errors, 6 warnings)
+

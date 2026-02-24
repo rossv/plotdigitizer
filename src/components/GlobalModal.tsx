@@ -11,7 +11,7 @@ export const GlobalModal: React.FC = () => {
 
     useEffect(() => {
         if (modal.isOpen && modal.type === 'prompt') {
-            setInputValue(modal.defaultValue || '');
+            setTimeout(() => setInputValue(modal.defaultValue || ''), 0);
             // Focus input after a short delay to allow render
             setTimeout(() => {
                 inputRef.current?.focus();

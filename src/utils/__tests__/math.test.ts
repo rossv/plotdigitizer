@@ -10,8 +10,7 @@ describe('math utils', () => {
         isLog: false,
         slope: 1, // (100-0)/(100-0) = 1
         intercept: 0, // 0 - 1*0 = 0
-        calibration: { p1: null, p2: null, isLog: false, slope: null, intercept: null } // Mock nested for type satisfaction if needed, though type def usually flat
-    } as any;
+    } as unknown as AxisCalibration;
 
     const logAxis: AxisCalibration = {
         p1: { px: 0, py: 0, val: 1 },    // log10(1) = 0
@@ -19,7 +18,7 @@ describe('math utils', () => {
         isLog: true,
         slope: 0.02, // (2-0)/(100-0) = 0.02
         intercept: 0, // 0 - 0.02*0 = 0
-    } as any;
+    } as unknown as AxisCalibration;
 
     describe('dataToPixel', () => {
         it('should convert data to pixel coordinates for linear axes', () => {

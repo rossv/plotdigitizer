@@ -14,7 +14,7 @@ import { Magnifier } from './components/Magnifier';
 
 // Animated Components
 const AnimatedCircle = (props: React.ComponentProps<typeof Circle>) => {
-  const ref = useRef<any>(null);
+  const ref = useRef<Konva.Circle>(null);
   useEffect(() => {
     const node = ref.current;
     if (node) {
@@ -31,7 +31,7 @@ const AnimatedCircle = (props: React.ComponentProps<typeof Circle>) => {
 };
 
 const AnimatedGroup = (props: React.ComponentProps<typeof Group>) => {
-  const ref = useRef<any>(null);
+  const ref = useRef<Konva.Group>(null);
   useEffect(() => {
     const node = ref.current;
     if (node) {
@@ -68,9 +68,15 @@ export const DigitizerCanvas = forwardRef<DigitizerHandle, DigitizerCanvasProps>
     } = useStore();
 
     const activeWorkspace = workspaces.find(w => w.id === activeWorkspaceId);
-    if (!activeWorkspace) return null;
 
-    const { imageUrl, mode, xAxis, xAxisName, series, yAxes, activeYAxisId, selectedPointIds } = activeWorkspace;
+    const imageUrl = activeWorkspace?.imageUrl || '';
+    const mode = activeWorkspace?.mode;
+    const xAxis = activeWorkspace?.xAxis;
+    const xAxisName = activeWorkspace?.xAxisName || '';
+    const series = activeWorkspace?.series || [];
+    const yAxes = activeWorkspace?.yAxes || [];
+    const activeYAxisId = activeWorkspace?.activeYAxisId || '';
+
     const [image] = useImage(imageUrl || '', 'anonymous');
     const stageRef = useRef<KonvaStage | null>(null);
     const containerRef = useRef<HTMLDivElement | null>(null);
@@ -119,14 +125,14 @@ export const DigitizerCanvas = forwardRef<DigitizerHandle, DigitizerCanvasProps>
           const oldScale = stage.scale();
           const oldPos = stage.position();
           let originalImageVisible = true;
-          let sourceImageNode: any = null;
-          let bgLayer: any = null;
-          const hiddenNodes: any[] = [];
+          let sourceImageNode: Konva.Node | null = null;
+          let bgLayer: Konva.Layer | null = null;
+          const hiddenNodes: Konva.Node[] = [];
 
           try {
             if (options?.graphicsOnly) {
               // 1. Hide Source Image
-              sourceImageNode = stage.findOne('.source-image');
+              sourceImageNode = stage.findOne('.source-image') || null;
               if (sourceImageNode) {
                 originalImageVisible = sourceImageNode.visible();
                 sourceImageNode.hide();
@@ -135,7 +141,7 @@ export const DigitizerCanvas = forwardRef<DigitizerHandle, DigitizerCanvasProps>
               // 2. Hide UI Artifacts
               ['.guide-line', '.snap-indicator', '.selection-box'].forEach(selector => {
                 const nodes = stage.find(selector);
-                nodes.forEach((node: any) => {
+                nodes.forEach((node: Konva.Node) => {
                   if (node.visible()) {
                     node.hide();
                     hiddenNodes.push(node);
@@ -158,8 +164,8 @@ export const DigitizerCanvas = forwardRef<DigitizerHandle, DigitizerCanvasProps>
               const bgW = bbox.width > 0 ? bbox.width + (padding * 2) : stage.width();
               const bgH = bbox.height > 0 ? bbox.height + (padding * 2) : stage.height();
 
-              bgLayer = new (window as any).Konva.Layer();
-              const bgRect = new (window as any).Konva.Rect({
+              bgLayer = new Konva.Layer();
+              const bgRect = new Konva.Rect({
                 x: bgX,
                 y: bgY,
                 width: bgW,
@@ -204,7 +210,7 @@ export const DigitizerCanvas = forwardRef<DigitizerHandle, DigitizerCanvasProps>
 
     // Derived Calibration Step
     let calibStep = 1;
-    if (mode === 'CALIBRATE_X') {
+    if (mode === 'CALIBRATE_X' && xAxis) {
       calibStep = !xAxis.p1 ? 1 : 2;
     } else if (mode === 'CALIBRATE_Y') {
       const yAxis = activeYAxisDef; // already derived above
@@ -263,7 +269,7 @@ export const DigitizerCanvas = forwardRef<DigitizerHandle, DigitizerCanvasProps>
       }
 
       // Snapping Logic (only in calibration modes)
-      if (mode === 'CALIBRATE_X' || mode === 'CALIBRATE_Y') {
+      if ((mode === 'CALIBRATE_X' || mode === 'CALIBRATE_Y') && xAxis) {
         const relPointer = stage.getRelativePointerPosition();
         if (relPointer) {
           const SNAP_THRESHOLD = 10 / currentScale;
@@ -408,24 +414,28 @@ export const DigitizerCanvas = forwardRef<DigitizerHandle, DigitizerCanvasProps>
     };
 
     const points = React.useMemo(() => {
-      const seriesPoints = series.flatMap((ser) => ser.points.map((p) => ({
+      const sers = activeWorkspace?.series || [];
+      const singlePtsArr = activeWorkspace?.singlePoints || [];
+      const selIds = activeWorkspace?.selectedPointIds || [];
+
+      const seriesPoints = sers.flatMap((ser) => ser.points.map((p) => ({
         ...p,
         color: ser.color,
-        selected: selectedPointIds?.includes(p.id),
+        selected: selIds.includes(p.id),
         showPointCoordinates: ser.showPointCoordinates,
         isSinglePoint: false,
       })));
 
-      const singlePts = (activeWorkspace.singlePoints || []).map(p => ({
+      const singlePts = singlePtsArr.map(p => ({
         ...p,
         color: '#eab308', // Yellow-500 equivalent, distinct from default red
-        selected: selectedPointIds?.includes(p.id),
+        selected: selIds.includes(p.id),
         showPointCoordinates: true,
         isSinglePoint: true,
       }));
 
       return [...seriesPoints, ...singlePts];
-    }, [series, activeWorkspace.singlePoints, selectedPointIds]);
+    }, [activeWorkspace?.series, activeWorkspace?.singlePoints, activeWorkspace?.selectedPointIds]);
 
     const handleStageMouseDown = (e: KonvaEventObject<MouseEvent>) => {
       if (mode !== 'SELECT') return;
@@ -436,7 +446,7 @@ export const DigitizerCanvas = forwardRef<DigitizerHandle, DigitizerCanvasProps>
       if (isBackground) {
         const stage = e.target.getStage();
         const ptr = stage?.getRelativePointerPosition();
-        if (ptr) {
+        if (ptr && activeWorkspace) {
           isSelectingRef.current = true;
           selectionStartRef.current = ptr;
 
@@ -454,13 +464,15 @@ export const DigitizerCanvas = forwardRef<DigitizerHandle, DigitizerCanvasProps>
           // Find points in box
           const box = selectionBox;
           const selectedIds: string[] = [];
-          points.forEach(p => {
-            if (p.seriesId === activeWorkspace.activeSeriesId) {
-              if (p.x >= box.x && p.x <= box.x + box.width && p.y >= box.y && p.y <= box.y + box.height) {
-                selectedIds.push(p.id);
+          if (activeWorkspace) {
+            points.forEach(p => {
+              if (p.seriesId === activeWorkspace.activeSeriesId) {
+                if (p.x >= box.x && p.x <= box.x + box.width && p.y >= box.y && p.y <= box.y + box.height) {
+                  selectedIds.push(p.id);
+                }
               }
-            }
-          });
+            });
+          }
           // Append
           selectPoints(selectedIds, true);
         } else {
@@ -476,6 +488,8 @@ export const DigitizerCanvas = forwardRef<DigitizerHandle, DigitizerCanvasProps>
 
     // Update scale on wheel...
     // (Your existing resize/wheel logic can remain mostly, except for initial width/height)
+
+    if (!activeWorkspace || !xAxis) return null;
 
     return (
       <div ref={containerRef} className="flex-1 h-full w-full overflow-hidden relative bg-transparent">
@@ -946,10 +960,10 @@ export const DigitizerCanvas = forwardRef<DigitizerHandle, DigitizerCanvasProps>
                     x={p.x}
                     y={p.y}
                     draggable
-                    onDragEnd={(e: any) => {
+                    onDragEnd={(e: KonvaEventObject<Event>) => {
                       updatePointPosition(p.id, e.target.x(), e.target.y());
                     }}
-                    onClick={(e: any) => {
+                    onClick={(e: KonvaEventObject<MouseEvent>) => {
                       e.cancelBubble = true;
                       if (mode === 'SELECT' || mode === 'DIGITIZE' || mode === 'SINGLE_POINT') {
                         if (p.seriesId === activeWorkspace.activeSeriesId) {
@@ -996,10 +1010,10 @@ export const DigitizerCanvas = forwardRef<DigitizerHandle, DigitizerCanvasProps>
                   stroke={p.selected ? '#3b82f6' : '#0f172a'}
                   strokeWidth={(p.selected ? 3 : 1) / currentScale}
                   draggable
-                  onDragEnd={(e: any) => {
+                  onDragEnd={(e: KonvaEventObject<Event>) => {
                     updatePointPosition(p.id, e.target.x(), e.target.y());
                   }}
-                  onClick={(e: any) => {
+                  onClick={(e: KonvaEventObject<MouseEvent>) => {
                     e.cancelBubble = true;
                     if (mode === 'SELECT' || mode === 'DIGITIZE' || mode === 'SINGLE_POINT') {
                       if (p.seriesId === activeWorkspace.activeSeriesId) {

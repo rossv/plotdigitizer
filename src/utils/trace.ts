@@ -106,7 +106,7 @@ export const traceLine = (
     let current = start;
     let lastDx = 0;
     let lastDy = 0;
-    let MAX_STEPS = 10000;
+    const MAX_STEPS = 10000;
     let steps = 0;
 
     while (steps < MAX_STEPS) {

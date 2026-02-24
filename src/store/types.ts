@@ -50,6 +50,7 @@ export interface WorkspaceSlice {
     removeWorkspace: (id: string) => void;
     setActiveWorkspace: (id: string) => void;
     updateWorkspaceName: (id: string, name: string) => void;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     loadProject: (projectData: any) => void;
     setImageUrl: (url: string | null) => void;
     setMode: (mode: AppMode) => void;

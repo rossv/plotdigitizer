@@ -49,7 +49,7 @@ export const createWorkspaceSlice: StoreSlice<WorkspaceSlice> = (set, get) => ({
             // legacy fields: xAxis, yAxes, series, imageUrl, etc.
             Object.keys(projectData).forEach(key => {
                 if (key in ws && key !== 'id' && key !== 'name') {
-                    // @ts-ignore
+                    // @ts-expect-error Legacy mapping dynamic keys
                     ws[key] = projectData[key];
                 }
             });
@@ -115,12 +115,12 @@ export const createWorkspaceSlice: StoreSlice<WorkspaceSlice> = (set, get) => ({
             const yP2 = { px: parseFloat(String(result.yAxis.p2.x)), py: parseFloat(String(result.yAxis.p2.y)), val: parseVal(y2Str) };
 
             set(state => updateActiveWorkspace(state, (ws) => {
-                let newXAxis = { ...ws.xAxis, p1: xP1, p2: xP2, slope: null as number | null, intercept: null as number | null };
+                const newXAxis = { ...ws.xAxis, p1: xP1, p2: xP2, slope: null as number | null, intercept: null as number | null };
                 const newXAxisName = (xName && xName.length > 1) ? xName.replace(/[\n\r]/g, ' ').trim() : ws.xAxisName;
 
                 if (!isNaN(xP1.val) && !isNaN(xP2.val)) {
                     try {
-                        let px1 = xP1.px;
+                        const px1 = xP1.px;
                         let px2 = xP2.px;
                         if (Math.abs(px1 - px2) < 0.1) px2 += 1;
                         const { slope, intercept } = calculateCalibration(px1, xP1.val, px2, xP2.val, newXAxis.isLog);
@@ -133,14 +133,14 @@ export const createWorkspaceSlice: StoreSlice<WorkspaceSlice> = (set, get) => ({
 
                 const newYAxes = ws.yAxes.map(y => {
                     if (y.id === ws.activeYAxisId) {
-                        let newCalib = { ...y.calibration, p1: yP1, p2: yP2, slope: null as number | null, intercept: null as number | null };
+                        const newCalib = { ...y.calibration, p1: yP1, p2: yP2, slope: null as number | null, intercept: null as number | null };
                         let newName = y.name;
                         if (yName && yName.length > 1) {
                             newName = yName.replace(/[\n\r]/g, ' ').trim();
                         }
                         if (!isNaN(yP1.val) && !isNaN(yP2.val)) {
                             try {
-                                let py1 = yP1.py;
+                                const py1 = yP1.py;
                                 let py2 = yP2.py;
                                 if (Math.abs(py1 - py2) < 0.1) py2 += 1;
                                 const { slope, intercept } = calculateCalibration(py1, yP1.val, py2, yP2.val, newCalib.isLog);

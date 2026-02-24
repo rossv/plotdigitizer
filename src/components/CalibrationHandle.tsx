@@ -1,6 +1,8 @@
 import React from 'react';
 import { Group, Rect, Text } from 'react-konva';
 import { useStore } from '../store';
+import type { AxisCalibration, YAxisDefinition, Workspace } from '../store/types';
+import Konva from 'konva';
 
 interface CalibrationHandleProps {
     x: number;
@@ -11,25 +13,28 @@ interface CalibrationHandleProps {
     axisId: string | null;
     pointIndex: 1 | 2;
     scale: number;
-    xAxis: any;
-    yAxes: any[];
+    xAxis: AxisCalibration;
+    yAxes: YAxisDefinition[];
 }
 
 export const CalibrationHandle: React.FC<CalibrationHandleProps> = ({ x, y, label, color, axisType, axisId, pointIndex, scale, xAxis, yAxes }) => {
     const { updateCalibrationPointPosition, setPendingCalibrationPoint, activeWorkspaceId, workspaces } = useStore();
-    const activeWorkspace = workspaces.find((w: any) => w.id === activeWorkspaceId);
+    const activeWorkspace = workspaces.find((w: Workspace) => w.id === activeWorkspaceId);
     const mode = activeWorkspace?.mode || 'IDLE';
 
     const size = 12 / scale; // Slightly larger for better visibility
     const strokeWidth = 2 / scale;
 
+    const groupRef = React.useRef<Konva.Group>(null);
+
     return (
         <Group
+            ref={groupRef}
             x={x}
             y={y}
             draggable
-            dragBoundFunc={function (this: any, pos: { x: number, y: number }) {
-                const stage = this.getStage();
+            dragBoundFunc={(pos: { x: number, y: number }) => {
+                const stage = groupRef.current?.getStage();
                 if (!stage) return pos;
 
                 // Transform absolute position to local (logical) position
@@ -53,7 +58,7 @@ export const CalibrationHandle: React.FC<CalibrationHandleProps> = ({ x, y, labe
                 }
 
                 // 2. Check Y Axis Points (all Y axes)
-                yAxes.forEach((ax: any) => {
+                yAxes.forEach((ax: YAxisDefinition) => {
                     if (ax.calibration.p1) {
                         const isSelf = axisType === 'Y' && ax.id === axisId && pointIndex === 1;
                         if (!isSelf) targets.push({ x: ax.calibration.p1.px, y: ax.calibration.p1.py });

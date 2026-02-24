@@ -6,7 +6,7 @@ import { v4 as uuidv4 } from 'uuid';
 if (!global.crypto) {
     global.crypto = {
         randomUUID: () => uuidv4() as `${string}-${string}-${string}-${string}-${string}`
-    } as any;
+    } as unknown as typeof global.crypto;
 } else if (!global.crypto.randomUUID) {
     global.crypto.randomUUID = () => uuidv4() as `${string}-${string}-${string}-${string}-${string}`;
 }
@@ -31,7 +31,6 @@ const run = () => {
     logState("Initial");
 
     const state = useStore.getState();
-    const wsId = state.activeWorkspaceId;
 
     // 1. Calibrate X Axis
     console.log("--- Calibrating X Axis ---");

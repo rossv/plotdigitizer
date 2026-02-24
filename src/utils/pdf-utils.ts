@@ -32,6 +32,7 @@ export const renderPdfPageToDataUrl = async (pdf: pdfjsLib.PDFDocumentProxy, pag
     await page.render({
         canvasContext: context,
         viewport: viewport,
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
     } as any).promise;
 
     return canvas.toDataURL('image/png');

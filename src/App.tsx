@@ -73,29 +73,27 @@ export default function App() {
 
   const activeWorkspace = workspaces.find(w => w.id === activeWorkspaceId);
 
-  // Fail-safe
-  if (!activeWorkspace) {
-    if (workspaces.length > 0) setActiveWorkspace(workspaces[0].id);
-    return null;
-  }
+  const mode = activeWorkspace?.mode;
+  const series = activeWorkspace?.series || [];
+  const activeSeriesId = activeWorkspace?.activeSeriesId || '';
+  const xAxis = activeWorkspace?.xAxis;
+  const xAxisName = activeWorkspace?.xAxisName || '';
+  const yAxes = activeWorkspace?.yAxes || [];
+  const activeYAxisId = activeWorkspace?.activeYAxisId || '';
 
-  const {
-    mode,
-    series,
-    activeSeriesId,
-    xAxis,
-    xAxisName,
-    yAxes,
-    activeYAxisId
-  } = activeWorkspace;
+  // Fail-safe selection of first workspace
+  useEffect(() => {
+    if (!activeWorkspace && workspaces.length > 0) {
+      setActiveWorkspace(workspaces[0].id);
+    }
+  }, [activeWorkspace, workspaces, setActiveWorkspace]);
 
   const activeSeries = series.find((s) => s.id === activeSeriesId);
   const activeSeriesYAxis = yAxes.find((y) => y.id === activeSeries?.yAxisId)?.calibration;
 
-  const isCalibrated =
+  const isCalibrated = !!xAxis && !!activeSeriesYAxis &&
     xAxis.slope !== null && Number.isFinite(xAxis.slope) &&
     xAxis.intercept !== null && Number.isFinite(xAxis.intercept) &&
-    !!activeSeriesYAxis &&
     activeSeriesYAxis.slope !== null && Number.isFinite(activeSeriesYAxis.slope) &&
     activeSeriesYAxis.intercept !== null && Number.isFinite(activeSeriesYAxis.intercept);
 
@@ -140,6 +138,8 @@ export default function App() {
   }, [processFile]);
 
 
+
+  if (!activeWorkspace || !xAxis) return null;
 
   const isXCalibrated = xAxis.slope !== null && !isNaN(xAxis.slope);
 
@@ -584,7 +584,7 @@ export default function App() {
                       <div className="flex gap-2">
                         <select
                           value={activeSeries.fitConfig.type}
-                          onChange={(e) => setSeriesFitConfig(activeSeriesId, { type: e.target.value as any })}
+                          onChange={(e) => setSeriesFitConfig(activeSeriesId, { type: e.target.value as 'linear' | 'polynomial' | 'exponential' })}
                           className="flex-1 text-[11px] px-2 py-1 rounded border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-300"
                         >
                           <option value="linear">Linear</option>
@@ -607,7 +607,7 @@ export default function App() {
                         <span className="text-[10px] text-slate-500 dark:text-slate-400 whitespace-nowrap">Intercept:</span>
                         <select
                           value={activeSeries.fitConfig.interceptMode || 'auto'}
-                          onChange={(e) => setSeriesFitConfig(activeSeriesId, { interceptMode: e.target.value as any })}
+                          onChange={(e) => setSeriesFitConfig(activeSeriesId, { interceptMode: e.target.value as 'auto' | 'zero' | 'firstPoint' })}
                           className="flex-1 text-[11px] px-2 py-1 rounded border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-300"
                         >
                           <option value="auto">Auto</option>
@@ -747,11 +747,9 @@ export default function App() {
                   });
                 }}
                 title="Resample points using best-fit curve"
-                className={`flex items-center justify-center gap-2 rounded-xl px-3 py-3 text-sm font-bold transition-all active:scale-95 hover:shadow-md ${false // No active mode for this action?
-                  ? 'bg-indigo-600 text-white shadow-indigo-500/40 scale-[1.02] animate-pulse-slow'
-                  : isCalibrated && activeSeries && activeSeries.points.length >= 2
-                    ? 'bg-indigo-50 dark:bg-indigo-900/20 text-indigo-700 dark:text-indigo-400 hover:bg-indigo-100 dark:hover:bg-indigo-900/30 ring-1 ring-inset ring-indigo-600/20'
-                    : 'bg-slate-100 dark:bg-slate-800 text-slate-400 cursor-not-allowed'
+                className={`flex items-center justify-center gap-2 rounded-xl px-3 py-3 text-sm font-bold transition-all active:scale-95 hover:shadow-md ${isCalibrated && activeSeries && activeSeries.points.length >= 2
+                  ? 'bg-indigo-50 dark:bg-indigo-900/20 text-indigo-700 dark:text-indigo-400 hover:bg-indigo-100 dark:hover:bg-indigo-900/30 ring-1 ring-inset ring-indigo-600/20'
+                  : 'bg-slate-100 dark:bg-slate-800 text-slate-400 cursor-not-allowed'
                   } transition-all active:scale-95`}
               >
                 <Activity className="h-4 w-4" />

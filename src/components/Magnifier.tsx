@@ -1,8 +1,10 @@
 import React, { useRef, useEffect } from 'react';
 
+import Konva from 'konva';
+
 interface MagnifierProps {
     imageUrl: string | null;
-    stageRef: React.RefObject<any>;
+    stageRef: React.RefObject<Konva.Stage | null>;
     containerRef: React.RefObject<HTMLDivElement | null>;
     magPos: { x: number; y: number };
     setMagPos: (pos: { x: number; y: number }) => void;
@@ -72,8 +74,10 @@ export const Magnifier: React.FC<MagnifierProps> = ({
 
         // 3. Draw Layers
         // Konva layers are backed by native canvases that map 1:1 to the Stage container (usually)
-        layers.forEach((layer: any) => {
-            if (!layer.isVisible()) return;
+        layers.forEach((node: Konva.Node) => {
+            if (!node.isVisible()) return;
+            const layer = node as Konva.Layer;
+            if (!layer.getCanvas) return;
 
             // Accessing private _canvas is a bit hacky but efficient for this
             const nativeCanvas = layer.getCanvas()._canvas;
@@ -105,7 +109,7 @@ export const Magnifier: React.FC<MagnifierProps> = ({
 
         ctx.restore();
 
-    }, [imageUrl, magPos, magSize, magnifierZoom, stageRef]);
+    }, [imageUrl, magSize, magnifierZoom, stageRef]);
 
     // Animation Loop
     React.useLayoutEffect(() => {
