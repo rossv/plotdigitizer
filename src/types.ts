@@ -23,7 +23,7 @@ export type YAxisDefinition = {
   calibration: AxisCalibration;
 };
 
-export type CurveFitType = 'linear' | 'polynomial' | 'exponential';
+export type CurveFitType = 'linear' | 'polynomial' | 'exponential' | 'power' | 'logarithmic';
 
 export type CurveFitConfig = {
   enabled: boolean;

@@ -7,6 +7,7 @@ export interface FitResult {
     equation: string;
     r2: number;
     predict: (x: number) => number;
+    type: 'linear' | 'polynomial' | 'exponential' | 'power' | 'logarithmic';
 }
 
 export const fitLinear = (points: Point[], constraintY?: number): FitResult | null => {
@@ -62,7 +63,8 @@ export const fitLinear = (points: Point[], constraintY?: number): FitResult | nu
         points: generateCurvePoints(predictFn, points),
         equation,
         r2,
-        predict: predictFn
+        predict: predictFn,
+        type: 'linear'
     };
 };
 
@@ -165,7 +167,8 @@ export const fitPolynomial = (points: Point[], order: number = 2, constraintY?: 
         points: generateCurvePoints(predictFn, points),
         equation,
         r2,
-        predict: predictFn
+        predict: predictFn,
+        type: 'polynomial'
     };
 };
 
@@ -230,7 +233,50 @@ export const fitExponential = (points: Point[], constraintY?: number): FitResult
         points: generateCurvePoints(predictFn, points),
         equation,
         r2,
-        predict: predictFn
+        predict: predictFn,
+        type: 'exponential'
+    };
+};
+
+export const fitPower = (points: Point[], constraintY?: number): FitResult | null => {
+    const data: DataPoint[] = points
+        // Ensure strictly positive X and Y for log-log
+        .filter((p) => p.dataX !== undefined && p.dataY !== undefined && p.dataX! > 0 && p.dataY! > 0)
+        .map((p) => [p.dataX!, p.dataY!]);
+
+    if (data.length < 2) return null;
+
+    if (constraintY) return null; // Power-law constraints could be complex, omitting for now
+
+    const result = regression.power(data, { precision: 10 });
+    const predictFn = (x: number) => result.predict(x)[1];
+    return {
+        points: generateCurvePoints(predictFn, points),
+        equation: result.string,
+        r2: result.r2,
+        predict: predictFn,
+        type: 'power'
+    };
+};
+
+export const fitLogarithmic = (points: Point[], constraintY?: number): FitResult | null => {
+    const data: DataPoint[] = points
+        // Ensure strictly positive X for log
+        .filter((p) => p.dataX !== undefined && p.dataY !== undefined && p.dataX! > 0)
+        .map((p) => [p.dataX!, p.dataY!]);
+
+    if (data.length < 2) return null;
+
+    if (constraintY) return null; // Logarithmic offset constraints complex, omitting for now
+
+    const result = regression.logarithmic(data, { precision: 10 });
+    const predictFn = (x: number) => result.predict(x)[1];
+    return {
+        points: generateCurvePoints(predictFn, points),
+        equation: result.string,
+        r2: result.r2,
+        predict: predictFn,
+        type: 'logarithmic'
     };
 };
 
@@ -274,12 +320,12 @@ const generateCurvePoints = (
 };
 
 
-export const findBestFit = (points: Point[]): { config: { type: 'linear' | 'polynomial' | 'exponential', order?: number }, result: FitResult } | null => {
+export const findBestFit = (points: Point[]): { config: { type: 'linear' | 'polynomial' | 'exponential' | 'power' | 'logarithmic', order?: number }, result: FitResult } | null => {
     // Try Linear
     const linear = fitLinear(points);
 
     // Explicitly type 'best' to allow other fit types later
-    let best: { config: { type: 'linear' | 'polynomial' | 'exponential', order?: number }, result: FitResult } | null = linear
+    let best: { config: { type: 'linear' | 'polynomial' | 'exponential' | 'power' | 'logarithmic', order?: number }, result: FitResult } | null = linear
         ? { config: { type: 'linear' as const }, result: linear }
         : null;
 
@@ -287,6 +333,18 @@ export const findBestFit = (points: Point[]): { config: { type: 'linear' | 'poly
     const exponential = fitExponential(points);
     if (exponential && (!best || exponential.r2 > best.result.r2)) {
         best = { config: { type: 'exponential' as const }, result: exponential };
+    }
+
+    // Try Power
+    const power = fitPower(points);
+    if (power && (!best || power.r2 > best.result.r2)) {
+        best = { config: { type: 'power' as const }, result: power };
+    }
+
+    // Try Logarithmic
+    const logarithmic = fitLogarithmic(points);
+    if (logarithmic && (!best || logarithmic.r2 > best.result.r2)) {
+        best = { config: { type: 'logarithmic' as const }, result: logarithmic };
     }
 
     // Try Polynomial (2 to 6)

@@ -607,32 +607,52 @@ export const DigitizerCanvas = forwardRef<DigitizerHandle, DigitizerCanvasProps>
               // If main axes are not calibrated, can't draw fit
               if (!curveYAxis || curveYAxis.slope === null || curveYAxis.intercept === null || xAxis.slope === null || xAxis.intercept === null) return null;
 
-              const points: number[] = [];
+              const segments: number[][] = [];
+              let currentSegment: number[] = [];
+
               ser.fitResult.points.forEach(p => {
                 if (p.dataX !== undefined && p.dataY !== undefined) {
-                  // Inverse calibration
                   let xVal = p.dataX;
-                  if (xAxis.isLog && xVal > 0) xVal = Math.log10(xVal);
+                  let yVal = p.dataY;
+
+                  // Break segment if value is invalid for log scale
+                  if ((xAxis.isLog && xVal <= 0) || (curveYAxis.isLog && yVal <= 0)) {
+                    if (currentSegment.length > 0) {
+                      segments.push(currentSegment);
+                      currentSegment = [];
+                    }
+                    return;
+                  }
+
+                  // Inverse calibration
+                  if (xAxis.isLog) xVal = Math.log10(xVal);
                   const px = (xVal - xAxis.intercept!) / xAxis.slope!;
 
-                  let yVal = p.dataY;
-                  if (curveYAxis.isLog && yVal > 0) yVal = Math.log10(yVal);
+                  if (curveYAxis.isLog) yVal = Math.log10(yVal);
                   const py = (yVal - curveYAxis.intercept!) / curveYAxis.slope!;
 
-                  points.push(px, py);
+                  currentSegment.push(px, py);
                 }
               });
 
+              if (currentSegment.length > 0) {
+                segments.push(currentSegment);
+              }
+
               return (
-                <KonvaLine
-                  key={`fit-${ser.id}`}
-                  points={points}
-                  stroke={ser.color}
-                  strokeWidth={2 / currentScale}
-                  tension={0.5}
-                  listening={false}
-                  dash={[10, 5]} // Dashed line to distinguish from raw data or connecting lines
-                />
+                <Group key={`fit-group-${ser.id}`}>
+                  {segments.map((points, idx) => (
+                    <KonvaLine
+                      key={`fit-${ser.id}-${idx}`}
+                      points={points}
+                      stroke={ser.color}
+                      strokeWidth={2 / currentScale}
+                      tension={0.5}
+                      listening={false}
+                      dash={[10, 5]} // Dashed line to distinguish from raw data or connecting lines
+                    />
+                  ))}
+                </Group>
               );
             })}
 

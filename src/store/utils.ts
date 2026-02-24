@@ -1,7 +1,7 @@
 import { v4 as uuidv4 } from 'uuid';
 import type { AxisCalibration, Series } from '../types';
 import type { StoreState, Workspace } from './types';
-import { fitLinear, fitPolynomial, fitExponential } from '../utils/curveFit';
+import { fitLinear, fitPolynomial, fitExponential, fitPower, fitLogarithmic } from '../utils/curveFit';
 
 export const initialAxis: AxisCalibration = {
     p1: null,
@@ -55,6 +55,8 @@ export const updateSeriesFit = (series: Series): Series => {
         if (type === 'linear') result = fitLinear(series.points, constraintY);
         else if (type === 'polynomial') result = fitPolynomial(series.points, order, constraintY);
         else if (type === 'exponential') result = fitExponential(series.points, constraintY);
+        else if (type === 'power') result = fitPower(series.points, constraintY);
+        else if (type === 'logarithmic') result = fitLogarithmic(series.points, constraintY);
     } catch (e) {
         console.error('Fit calculation failed', e);
     }

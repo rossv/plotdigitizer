@@ -584,12 +584,14 @@ export default function App() {
                       <div className="flex gap-2">
                         <select
                           value={activeSeries.fitConfig.type}
-                          onChange={(e) => setSeriesFitConfig(activeSeriesId, { type: e.target.value as 'linear' | 'polynomial' | 'exponential' })}
+                          onChange={(e) => setSeriesFitConfig(activeSeriesId, { type: e.target.value as 'linear' | 'polynomial' | 'exponential' | 'power' | 'logarithmic' })}
                           className="flex-1 text-[11px] px-2 py-1 rounded border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-300"
                         >
                           <option value="linear">Linear</option>
                           <option value="polynomial">Polynomial</option>
                           <option value="exponential">Exponential</option>
+                          <option value="power">Power</option>
+                          <option value="logarithmic">Logarithmic</option>
                         </select>
                         {activeSeries.fitConfig.type === 'polynomial' && (
                           <input
