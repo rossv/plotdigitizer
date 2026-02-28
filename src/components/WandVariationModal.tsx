@@ -22,31 +22,53 @@ export const WandVariationModal: React.FC<WandVariationModalProps> = ({
     const [variations, setVariations] = useState<{ preset: WandPreset; points: Point[] }[]>([]);
     const [loading, setLoading] = useState(false);
     const [selectedIdx, setSelectedIdx] = useState<number | null>(null);
+    const runIdRef = useRef(0);
 
     useEffect(() => {
+        runIdRef.current += 1;
+        const runId = runIdRef.current;
+        let cancelled = false;
+        let t1: number | undefined;
+        let t2: number | undefined;
+
         if (isOpen && imageData) {
-            setTimeout(() => setLoading(true), 0);
+            t1 = window.setTimeout(() => {
+                if (cancelled || runId !== runIdRef.current || !isOpen) return;
+                setLoading(true);
+            }, 0);
+
             // Run in timeout to let UI render the modal first
-            setTimeout(() => {
+            t2 = window.setTimeout(() => {
+                if (cancelled || runId !== runIdRef.current || !isOpen) return;
+
                 const vars = generateWandVariations(imageData, seed);
+                if (cancelled || runId !== runIdRef.current || !isOpen) return;
+
                 setVariations(vars);
+                setSelectedIdx(vars.length > 0 ? 0 : null);
                 setLoading(false);
-                // Default select 'balanced' (index 0 usually)
-                if (vars.length > 0) setSelectedIdx(0);
             }, 50);
         } else {
-            setTimeout(() => {
+            t1 = window.setTimeout(() => {
+                if (cancelled || runId !== runIdRef.current) return;
+                setLoading(false);
                 setVariations([]);
                 setSelectedIdx(null);
             }, 0);
         }
+
+        return () => {
+            cancelled = true;
+            if (t1 !== undefined) window.clearTimeout(t1);
+            if (t2 !== undefined) window.clearTimeout(t2);
+        };
     }, [isOpen, imageData, seed]);
 
     const handleConfirm = React.useCallback(() => {
-        if (selectedIdx !== null && variations[selectedIdx]) {
+        if (!loading && selectedIdx !== null && variations[selectedIdx]) {
             onSelect(variations[selectedIdx].points);
         }
-    }, [selectedIdx, variations, onSelect]);
+    }, [loading, selectedIdx, variations, onSelect]);
 
     // Global Keyboard Interaction
     useEffect(() => {
