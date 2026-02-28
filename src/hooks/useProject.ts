@@ -39,8 +39,12 @@ export function useProject() {
         link.download = `plot_digitizer_project_${new Date().toISOString().slice(0, 10)}.json`;
         link.href = url;
         document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
+        try {
+            link.click();
+        } finally {
+            document.body.removeChild(link);
+            URL.revokeObjectURL(url);
+        }
 
         setSaveSuccess(true);
         setTimeout(() => setSaveSuccess(false), 2000);
