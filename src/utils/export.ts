@@ -54,7 +54,11 @@ export const downloadCSV = (content: string, filename: string) => {
         link.setAttribute('download', filename);
         link.style.visibility = 'hidden';
         document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
+        try {
+            link.click();
+        } finally {
+            document.body.removeChild(link);
+            URL.revokeObjectURL(url);
+        }
     }
 };
