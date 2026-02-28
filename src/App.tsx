@@ -46,7 +46,7 @@ export default function App() {
 
   // Custom Hooks
   useGlobalShortcuts();
-  const { pdfDocument, setPdfDocument, handleFile, loadTestImage } = useFileHandler();
+  const { pdfDocument, setPdfDocument, handleFile, loadTestImage, processFile } = useFileHandler();
   const { handleSaveProject, handleLoadProject, saveSuccess } = useProject();
   const { handleExportImage, exportSuccess, exportGraphicsSuccess } = useExport(digitizerRef);
 
@@ -130,8 +130,6 @@ export default function App() {
       document.documentElement.classList.remove('dark');
     }
   }, [theme]);
-
-  const { processFile } = useFileHandler();
 
   useEffect(() => {
     const handlePaste = (e: ClipboardEvent) => {
