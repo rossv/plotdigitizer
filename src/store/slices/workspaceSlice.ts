@@ -1,5 +1,6 @@
-import type { StoreSlice, Workspace, WorkspaceSlice } from '../types';
+import type { StoreSlice, WorkspaceSlice } from '../types';
 import { createInitialWorkspace, updateActiveWorkspace } from '../utils';
+import { sanitizeProjectData } from '../projectValidation';
 import { detectAxes } from '../../utils/autoDetect';
 import { calculateCalibration } from '../../utils/math';
 import { recognizeText } from '../../utils/ocr';
@@ -34,37 +35,30 @@ export const createWorkspaceSlice: StoreSlice<WorkspaceSlice> = (set, get) => ({
         workspaces: state.workspaces.map(w => w.id === id ? { ...w, name } : w)
     })),
 
-    loadProject: (projectData) => set((state) => {
-        // Detect if legacy or new format
-        let newWorkspaces: Workspace[] = [];
-        let newActiveId = '';
+    loadProject: (projectData: unknown) => set((state) => {
+        const sanitized = sanitizeProjectData(projectData);
 
-        if (Array.isArray(projectData.workspaces)) {
-            // New format
-            newWorkspaces = projectData.workspaces;
-            newActiveId = projectData.activeWorkspaceId || newWorkspaces[0]?.id;
-        } else {
-            // Legacy format - Convert to single workspace
-            const ws = createInitialWorkspace('Imported Project');
-            // legacy fields: xAxis, yAxes, series, imageUrl, etc.
-            Object.keys(projectData).forEach(key => {
-                if (key in ws && key !== 'id' && key !== 'name') {
-                    // @ts-expect-error Legacy mapping dynamic keys
-                    ws[key] = projectData[key];
-                }
+        if (sanitized.status === 'invalid') {
+            get().openModal({
+                type: 'alert',
+                title: 'Import Failed',
+                message: sanitized.warnings[0] || 'The selected file is invalid and could not be imported.',
             });
-            // Ensure history is initialized
-            ws.history = [{ series: ws.series, yAxes: ws.yAxes, xAxis: ws.xAxis, description: 'Initial State' }];
-            ws.historyIndex = 0;
+            return {};
+        }
 
-            newWorkspaces = [ws];
-            newActiveId = ws.id;
+        if (sanitized.status === 'recovered' || sanitized.status === 'migrated') {
+            get().openModal({
+                type: 'alert',
+                title: sanitized.status === 'migrated' ? 'Project Migrated' : 'Project Recovered',
+                message: sanitized.warnings.join('\n') || 'Project data was partially repaired during import.',
+            });
         }
 
         return {
-            workspaces: newWorkspaces,
-            activeWorkspaceId: newActiveId,
-            theme: projectData.theme || state.theme
+            workspaces: sanitized.workspaces,
+            activeWorkspaceId: sanitized.activeWorkspaceId,
+            theme: sanitized.theme || state.theme,
         };
     }),
 
