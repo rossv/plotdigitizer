@@ -2,6 +2,20 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.3.2] - 2026-03-13
+
+### Changed
+- No commits were added to this repository this week (2026-03-09 to 2026-03-13).
+- Key PR links: none (no PRs were merged this week).
+
+## [0.3.1] - 2026-03-13
+
+### Changed
+- Refreshed `README.md` to match current app behavior and commands.
+- Corrected local development URL to `http://localhost:5174` (`vite` strict port).
+- Updated deployment docs to include `VITE_BASE_PATH` and base-path resolution order.
+- Cleaned up outdated/broken formatting in documentation text.
+
 ## [0.3.0] - 2025-12-20
 
 ### Refactored

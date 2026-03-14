@@ -1,120 +1,85 @@
 # Plot Digitizer
 
-A powerful, modern web-based tool for extracting numerical data from plot images and PDFs. Built with React, Konva, and Tailwind CSS.
+Web app for extracting numeric data from plot images and PDFs.
 
 ![Plot Digitizer](./public/logo.png)
 
 ## Features
 
-### 🎯 Core Digitization
-- **Point Extraction**: Manually place points on data series to extract X/Y coordinates.
-- **Smart Wand**: A guided tracing tool that automatically generates points along a path you drag.
-- **Auto-Trace Wand**: Flood-fill based tracing to detect continuous lines of a specific color.
-- **Points of Interest**: Place independent "POI pins" to annotate specific locations.
-- **Selection & Manipulation**: Drag, select, and delete points. Use **Arrow Keys** to nudge selections (hold **Shift** for larger steps).
+- Manual digitizing, selection/editing, and point nudging.
+- Tracing tools: `Wand` (color-based auto-trace) and `Smart Wand` (beta guided tracing for dashed/intersection-heavy paths).
+- Multi-series support with per-series color, naming, and Y-axis assignment.
+- Multiple Y-axes with linear/log scaling and named axes.
+- Axis auto-detection helper plus guided two-point calibration.
+- Save/load full project JSON.
+- Multiple workspace tabs per session.
+- Fit and resample workflow.
+- Export options: CSV download, clipboard copy (tab-delimited table), annotated image export, and graphics-only transparent overlay export.
+- PDF import with page selection.
+- Light/dark theme and built-in Help/Changelog modal.
 
-### 📐 Advanced Calibration
-- **Multiple Axes**: Support for multiple Y-axes on the same plot.
-- **Calibration Guides**: Visual crosshairs and snapping assist in aligning calibration points perfectly.
-- **Log Scales**: Full support for Logarithmic scales on both X and Y axes.
+## Requirements
 
-### 🛠️ Professional Tools
-- **Project Management**: 
-  - **Tabbed Workspaces**: Work on multiple plots simultaneously.
-  - **Save & Load**: Save your entire workspace state to a local JSON file.
-- **Data Series**: Rename series and customize their colors.
-- **Fit & Resample**: Fit curves (Linear, Polynomial, Exponential) to your data and resample points for even distribution.
-- **PDF Support**: Import PDF files and select specific pages.
-- **Clipboard Integration**: Paste images directly (Ctrl+V) and copy data tables to clipboard.
+- Node.js 18+
+- npm 9+ (or compatible)
 
-### 🎨 Visual & Export
-- **Modern UI**: Polished interface with Dark Mode support.
-- **Export Data**: Download as CSV or Copy to clipboard.
-- **Export Graphics**: Save the annotated plot as an image, or use "Graphics Only" for a transparent overlay.
+## Quick Start
 
-## Getting Started
+```bash
+npm install
+npm run dev
+```
 
-### Prerequisites
+Vite is configured with `strictPort: true` on port `5174`, so local dev runs at:
 
-- Node.js (v18+ recommended)
-- npm or yarn
+- `http://localhost:5174`
 
-### Installation
+## Common Commands
 
-1. Clone the repository
-2. Install dependencies:
-   ```bash
-   npm install
-   ```
-3. Start the development server:
-   ```bash
-   npm run dev
-   ```
-4. Open the shown local URL (usually `http://localhost:5173`) in your browser.
+```bash
+npm run dev      # start local dev server
+npm run build    # type-check + production build
+npm run preview  # preview built output
+npm run lint     # eslint
+npm run test     # vitest
+```
 
-## How to Use
+## Usage Flow
 
-### 1. Load Data
-- Click the center dropzone to select an **Image** (PNG, JPG, SVG) or **PDF** file.
-- Or, simply **Paste** an image from your clipboard (`Ctrl+V`).
-
-### 2. Calibrate Axes
-- **X Axis**: Click **Calibrate X**. Follow the visual guides to place two known points. Enter their values.
-- **Y Axis**: Click **Calibrate Y**. Place two points and enter values. 
-- *Toggle 'Log' if the axis uses a logarithmic scale.*
-
-### 3. Digitize Data
-- **Manual**: Use the **Digitize** tool to click points.
-- **Smart Wand**: Use the **Smart Wand** to trace complex curves.
-- **Wand**: Use the **Wand** to auto-select lines by color.
-- **POI**: Use the **Point** tool for specific points of interest.
-- **Refine**: Switch to **Select** mode to edit points.
-- **Manage**: Rename series and change colors via the sidebar. Use "**Fit & Resample**" to smooth or decimate data.
-
-### 4. Export
-- **Data**: Use the Copy or Download buttons in the sidebar.
-- **Visuals**: Use the Camera icon to save an image. Toggle "Image Off" icon for transparent graphics export.
+1. Load an image or PDF (`Load Image / PDF`, drag-and-drop, or paste from clipboard).
+2. Calibrate X and Y axes with two known points each.
+3. Digitize with `Digitize`, `Wand`, `Smart Wand`, or `Point`.
+4. Refine selections, manage series/axes, and optionally resample points.
+5. Export data (copy/CSV) or graphics (image/graphics-only).
 
 ## Deployment
 
-The app supports deployment to root paths or subpaths (e.g., GitHub Pages).
+```bash
+npm run build
+```
 
-- **Root Domain**:
-  ```bash
-  npm run build
-  ```
-- **Subpath** (e.g., `/my-app/`):
-  ```bash
-  BASE_URL=/my-app/ npm run build
-  ```
+Base path is resolved in this order:
 
-### GitHub Pages
+1. `VITE_BASE_PATH`
+2. `BASE_URL`
+3. Auto-derived from `GITHUB_REPOSITORY` (project page or user/org page fallback)
 
-This project includes scripts for deploying the built site to GitHub Pages:
+For GitHub Pages:
 
-- Build and publish with one command:
-  ```bash
-  npm run deploy
-  ```
-  The `predeploy` script automatically runs the production build before publishing the `dist` directory.
-- Build only (useful for verifying output before publishing):
-  ```bash
-  npm run build
-  ```
+```bash
+npm run deploy
+```
 
-After publishing (either via `npm run deploy` or the GitHub Actions workflow), set your repository’s GitHub Pages source to the `gh-pages` branch in **Settings → Pages** with the root (`/`) folder. The published site will be available at:
-
-- **Project page:** `https://<user>.github.io/<repo>/` (e.g., `https://<user>.github.io/plotdigitizer/`)
-- **User/Org page:** `https://<user>.github.io/` (if the repository name ends with `.github.io`, the base path is `/`)
+`predeploy` runs the production build and publishes `dist` to `gh-pages`.
 
 ## Tech Stack
 
-- **Framework**: React 19 + Vite
-- **Canvas**: Konva.js / React-Konva
-- **Styling**: Tailwind CSS
-- **State**: Zustand
-- **PDF**: pdf.js
-- **Icons**: Lucide React
+- React 19 + Vite
+- TypeScript
+- Zustand
+- Konva / React-Konva
+- Tailwind CSS
+- pdf.js
 
 ## License
 

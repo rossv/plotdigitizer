@@ -22,3 +22,9 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# Local scratch artifacts
+lint_output*.txt
+test_output.txt
+repro_undo.ts
+test plot.json
