@@ -72,6 +72,14 @@ npm run deploy
 
 `predeploy` runs the production build and publishes `dist` to `gh-pages`.
 
+CI Pages deploy (`.github/workflows/pages.yml`) runs on pushes to `main` and currently executes:
+
+1. `npm ci`
+2. `npm run build`
+3. Upload/deploy `dist` via GitHub Pages actions
+
+`npm run test` is available locally but is not currently required by the Pages CI workflow.
+
 ## Tech Stack
 
 - React 19 + Vite

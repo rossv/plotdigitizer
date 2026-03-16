@@ -2,11 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
-## [0.3.2] - 2026-03-13
+## [0.3.2] - 2026-03-16
 
 ### Changed
-- No commits were added to this repository this week (2026-03-09 to 2026-03-13).
-- Key PR links: none (no PRs were merged this week).
+- Updated `README.md` deployment docs to reflect the current GitHub Pages CI steps.
+- Updated `AGENTS.md` to clarify that CI currently runs install and build (not tests) before Pages deploy.
+- Synced package metadata version with changelog release version.
 
 ## [0.3.1] - 2026-03-13
 
