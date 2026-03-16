@@ -28,3 +28,9 @@ lint_output*.txt
 test_output.txt
 repro_undo.ts
 test plot.json
+_codex_delete_probe.txt
+.tmp/
+.pytest_tmp/
+.pytest_tmp_local2/
+test_output/
+[a-z0-9][a-z0-9][a-z0-9][a-z0-9][a-z0-9][a-z0-9][a-z0-9][a-z0-9]
