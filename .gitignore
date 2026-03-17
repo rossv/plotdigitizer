@@ -33,4 +33,3 @@ _codex_delete_probe.txt
 .pytest_tmp/
 .pytest_tmp_local2/
 test_output/
-[a-z0-9][a-z0-9][a-z0-9][a-z0-9][a-z0-9][a-z0-9][a-z0-9][a-z0-9]
