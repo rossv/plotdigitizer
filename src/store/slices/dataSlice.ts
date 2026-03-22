@@ -277,7 +277,7 @@ export const createDataSlice: StoreSlice<DataSlice> = (set) => ({
         if (ws.historyIndex <= 0) return {};
         const newIndex = ws.historyIndex - 1;
         if (!ws.history || newIndex >= ws.history.length) {
-            return { historyIndex: newIndex };
+            return {};
         }
         return {
             series: ws.history[newIndex].series,

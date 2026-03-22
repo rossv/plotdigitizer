@@ -1,3 +1,4 @@
+import { v4 as uuidv4 } from 'uuid';
 import type { StoreSlice, CalibrationSlice, AxisCalibration } from '../types';
 import { updateActiveWorkspace, initialAxis, updateSeriesFit } from '../utils';
 import { calculateCalibration, pixelToData } from '../../utils/math';
@@ -42,13 +43,7 @@ export const createCalibrationSlice: StoreSlice<CalibrationSlice> = (set) => ({
     })),
 
     addYAxis: () => set(state => updateActiveWorkspace(state, (ws) => {
-        // We rely on uuid imported in utils or handled elsewhere. 
-        // Actually, we need to generate ID here. 
-        // Since I didn't import uuid here, use random fallback which is acceptable for now or import uuid.
-        // I'll import uuid to be safe.
-        // Wait, import 'v4' was NOT in my proposed content above. 
-        // I should add it.
-        const id = crypto.randomUUID ? crypto.randomUUID() : Date.now().toString();
+        const id = uuidv4();
 
         return {
             yAxes: [...ws.yAxes, {
