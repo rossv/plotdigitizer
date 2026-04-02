@@ -213,7 +213,7 @@ const sanitizeLegacyWorkspace = (projectData: Record<string, unknown>): Workspac
         ws.imageUrl = projectData.imageUrl;
     }
 
-    ws.history = [{ series: ws.series, yAxes: ws.yAxes, xAxis: ws.xAxis, imageRotation: ws.imageRotation, description: 'Initial State' }];
+    ws.history = [{ series: ws.series, singlePoints: ws.singlePoints, yAxes: ws.yAxes, xAxis: ws.xAxis, imageRotation: ws.imageRotation, description: 'Initial State' }];
     ws.historyIndex = 0;
 
     return ws;

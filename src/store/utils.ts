@@ -135,6 +135,7 @@ export const createInitialWorkspace = (name: string): Workspace => ({
                     calibration: { ...initialAxis }
                 }
             ],
+            singlePoints: [],
             xAxis: { ...initialAxis },
             imageRotation: 0,
             description: 'Initial State'
