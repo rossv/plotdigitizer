@@ -202,7 +202,7 @@ export const createDataSlice: StoreSlice<DataSlice> = (set) => ({
 
         const updatedSinglePoints = [...ws.singlePoints, newPoint];
         const newHistory = ws.history ? ws.history.slice(0, ws.historyIndex + 1) : [];
-        newHistory.push({ series: ws.series, singlePoints: updatedSinglePoints, yAxes: ws.yAxes, xAxis: ws.xAxis, description: 'Add Point' });
+        newHistory.push({ series: ws.series, singlePoints: updatedSinglePoints, yAxes: ws.yAxes, xAxis: ws.xAxis, imageRotation: ws.imageRotation, description: 'Add Point' });
 
         return {
             singlePoints: updatedSinglePoints,
@@ -256,7 +256,7 @@ export const createDataSlice: StoreSlice<DataSlice> = (set) => ({
         if (ws.singlePoints.some(p => p.id === pointId)) {
             const updatedSinglePoints = ws.singlePoints.filter(p => p.id !== pointId);
             const newHistory = ws.history ? ws.history.slice(0, ws.historyIndex + 1) : [];
-            newHistory.push({ series: ws.series, singlePoints: updatedSinglePoints, yAxes: ws.yAxes, xAxis: ws.xAxis, description: 'Delete Point' });
+            newHistory.push({ series: ws.series, singlePoints: updatedSinglePoints, yAxes: ws.yAxes, xAxis: ws.xAxis, imageRotation: ws.imageRotation, description: 'Delete Point' });
 
             return {
                 singlePoints: updatedSinglePoints,
@@ -385,7 +385,7 @@ export const createDataSlice: StoreSlice<DataSlice> = (set) => ({
 
             const updatedSinglePoints = ws.singlePoints.map(p => p.id === pointId ? { ...p, x: px, y: py, dataX: coords.x, dataY: coords.y } : p);
             const newHistory = ws.history ? ws.history.slice(0, ws.historyIndex + 1) : [];
-            newHistory.push({ series: ws.series, singlePoints: updatedSinglePoints, yAxes: ws.yAxes, xAxis: ws.xAxis, description: 'Move Point' });
+            newHistory.push({ series: ws.series, singlePoints: updatedSinglePoints, yAxes: ws.yAxes, xAxis: ws.xAxis, imageRotation: ws.imageRotation, description: 'Move Point' });
 
             return {
                 singlePoints: updatedSinglePoints,
