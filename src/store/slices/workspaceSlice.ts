@@ -1,11 +1,18 @@
 import type { StoreSlice, WorkspaceSlice } from '../types';
-import { createInitialWorkspace, updateActiveWorkspace } from '../utils';
+import { createInitialWorkspace, rotatePointClockwise, updateActiveWorkspace } from '../utils';
 import { sanitizeProjectData } from '../projectValidation';
 import { detectAxes } from '../../utils/autoDetect';
 import { calculateCalibration } from '../../utils/math';
 import { recognizeText } from '../../utils/ocr';
 
 const initWs = createInitialWorkspace('Workspace 1');
+
+const getImageDimensions = (url: string): Promise<{ width: number; height: number }> => new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => resolve({ width: img.naturalWidth || img.width, height: img.naturalHeight || img.height });
+    img.onerror = () => reject(new Error('Failed to load image for rotation.'));
+    img.src = url;
+});
 
 export const createWorkspaceSlice: StoreSlice<WorkspaceSlice> = (set, get) => ({
     workspaces: [initWs],
@@ -62,7 +69,7 @@ export const createWorkspaceSlice: StoreSlice<WorkspaceSlice> = (set, get) => ({
         };
     }),
 
-    setImageUrl: (url) => set(state => updateActiveWorkspace(state, () => ({ imageUrl: url }))),
+    setImageUrl: (url) => set(state => updateActiveWorkspace(state, () => ({ imageUrl: url, imageRotation: 0 }))),
 
     setMode: (mode) => set(state => updateActiveWorkspace(state, () => ({ mode, pendingCalibrationPoint: null }))),
 
@@ -154,6 +161,7 @@ export const createWorkspaceSlice: StoreSlice<WorkspaceSlice> = (set, get) => ({
                     series: ws.series,
                     yAxes: newYAxes,
                     xAxis: newXAxis,
+                    imageRotation: ws.imageRotation,
                     description: 'Auto Calibrate Axes',
                 });
 
@@ -189,6 +197,91 @@ export const createWorkspaceSlice: StoreSlice<WorkspaceSlice> = (set, get) => ({
         } catch (e) {
             console.error(e);
             get().openModal({ type: 'alert', message: 'Failed to detect axes. Please calibrate manually.' });
+        }
+    },
+
+    rotateImageClockwise: async () => {
+        const state = get();
+        const ws = state.workspaces.find(w => w.id === state.activeWorkspaceId);
+        if (!ws?.imageUrl) return;
+
+        try {
+            const { width, height } = await getImageDimensions(ws.imageUrl);
+
+            set(curr => updateActiveWorkspace(curr, (active) => {
+                const rotateCalPoint = (point: { px: number; py: number; val: number } | null) => {
+                    if (!point) return null;
+                    const rotated = rotatePointClockwise({ x: point.px, y: point.py }, width, height);
+                    return { ...point, px: rotated.x, py: rotated.y };
+                };
+
+                const newXAxis = {
+                    ...active.xAxis,
+                    p1: rotateCalPoint(active.xAxis.p1),
+                    p2: rotateCalPoint(active.xAxis.p2),
+                };
+
+                const newYAxes = active.yAxes.map((axis) => ({
+                    ...axis,
+                    calibration: {
+                        ...axis.calibration,
+                        p1: rotateCalPoint(axis.calibration.p1),
+                        p2: rotateCalPoint(axis.calibration.p2),
+                    },
+                }));
+
+                const updatedSeries = active.series.map((series) => ({
+                    ...series,
+                    points: series.points.map((p) => {
+                        const rotated = rotatePointClockwise({ x: p.x, y: p.y }, width, height);
+                        return { ...p, x: rotated.x, y: rotated.y };
+                    }),
+                    labelPosition: series.labelPosition
+                        ? rotatePointClockwise(series.labelPosition, width, height)
+                        : undefined,
+                }));
+
+                const newSinglePoints = active.singlePoints.map((p) => {
+                    const rotated = rotatePointClockwise({ x: p.x, y: p.y }, width, height);
+                    return { ...p, x: rotated.x, y: rotated.y };
+                });
+
+                const newPendingPoint = active.pendingCalibrationPoint
+                    ? (() => {
+                        const rotated = rotatePointClockwise({ x: active.pendingCalibrationPoint.px, y: active.pendingCalibrationPoint.py }, width, height);
+                        return {
+                            ...active.pendingCalibrationPoint,
+                            px: rotated.x,
+                            py: rotated.y,
+                        };
+                    })()
+                    : null;
+
+                const nextRotation = (((active.imageRotation + 90) % 360) as 0 | 90 | 180 | 270);
+                const newHistory = active.history ? active.history.slice(0, active.historyIndex + 1) : [];
+                newHistory.push({
+                    series: updatedSeries,
+                    yAxes: newYAxes,
+                    xAxis: newXAxis,
+                    imageRotation: nextRotation,
+                    description: 'Rotate Image 90° CW',
+                });
+
+                return {
+                    xAxis: newXAxis,
+                    yAxes: newYAxes,
+                    series: updatedSeries,
+                    singlePoints: newSinglePoints,
+                    pendingCalibrationPoint: newPendingPoint,
+                    imageRotation: nextRotation,
+                    history: newHistory,
+                    historyIndex: newHistory.length - 1,
+                    mode: active.mode === 'CALIBRATE_X' || active.mode === 'CALIBRATE_Y' ? 'IDLE' : active.mode,
+                };
+            }));
+        } catch (e) {
+            console.error(e);
+            get().openModal({ type: 'alert', message: 'Failed to rotate image. Please try reloading the file.' });
         }
     },
 });
