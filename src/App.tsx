@@ -26,6 +26,7 @@ export default function App() {
   const [seriesSettingsParent] = useAutoAnimate();
   const [copySuccess, setCopySuccess] = useState(false);
   const [showMobilePortraitWarning, setShowMobilePortraitWarning] = useState(false);
+  const [rotationInput, setRotationInput] = useState('0');
 
   useEffect(() => {
     const mediaQuery = window.matchMedia('(max-width: 768px) and (orientation: portrait)');
@@ -86,6 +87,8 @@ export default function App() {
     resampleActiveSeries,
     autoDetectAxes,
     rotateImageClockwise,
+    rotateImageByDegrees,
+    setImageRotation,
     updateCalibrationPointValue,
     snapSeriesToFit,
   } = useStore();
@@ -99,6 +102,11 @@ export default function App() {
   const xAxisName = activeWorkspace?.xAxisName || '';
   const yAxes = activeWorkspace?.yAxes || [];
   const activeYAxisId = activeWorkspace?.activeYAxisId || '';
+  const imageRotation = activeWorkspace?.imageRotation ?? 0;
+
+  useEffect(() => {
+    setRotationInput(imageRotation.toFixed(1));
+  }, [imageRotation]);
 
   // Fail-safe selection of first workspace
   useEffect(() => {
@@ -286,6 +294,60 @@ export default function App() {
               <RotateCw className="h-4 w-4" />
               Rotate image 90°
             </button>
+
+            <div className="rounded-lg border border-slate-200 dark:border-slate-700 p-2 space-y-2">
+              <div className="flex items-center gap-2">
+                <input
+                  type="number"
+                  step="0.1"
+                  value={rotationInput}
+                  onChange={(e) => setRotationInput(e.target.value)}
+                  onBlur={async () => {
+                    const value = parseFloat(rotationInput);
+                    if (!Number.isFinite(value) || !activeWorkspace.imageUrl) {
+                      setRotationInput(imageRotation.toFixed(1));
+                      return;
+                    }
+                    await setImageRotation(value);
+                  }}
+                  onKeyDown={async (e) => {
+                    if (e.key !== 'Enter') return;
+                    const value = parseFloat(rotationInput);
+                    if (!Number.isFinite(value) || !activeWorkspace.imageUrl) return;
+                    await setImageRotation(value);
+                  }}
+                  disabled={!activeWorkspace.imageUrl}
+                  className="flex-1 px-2 py-1 text-xs rounded border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200 disabled:opacity-50"
+                  title="Manual image rotation in degrees"
+                />
+                <button
+                  onClick={() => rotateImageByDegrees(1)}
+                  disabled={!activeWorkspace.imageUrl}
+                  className="px-2 py-1 rounded border border-slate-200 dark:border-slate-700 text-xs text-slate-600 dark:text-slate-300 hover:text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-900/20 disabled:opacity-50"
+                  title="Rotate image by +1°"
+                >
+                  +1°
+                </button>
+              </div>
+              <input
+                type="range"
+                min={0}
+                max={360}
+                step={0.1}
+                value={imageRotation}
+                onChange={async (e) => {
+                  const value = parseFloat(e.target.value);
+                  if (!Number.isFinite(value)) return;
+                  await setImageRotation(value);
+                }}
+                disabled={!activeWorkspace.imageUrl}
+                className="w-full"
+                title="Click and drag to rotate image"
+              />
+              <div className="text-[10px] text-slate-500 dark:text-slate-400">
+                Drag slider to rotate, or type a degree value.
+              </div>
+            </div>
           </div>
 
           {/* Axes Bin */}

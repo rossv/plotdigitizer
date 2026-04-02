@@ -153,6 +153,48 @@ export const rotatePointClockwise = (point: { x: number; y: number }, imageWidth
     };
 };
 
+export const normalizeRotation = (degrees: number) => ((degrees % 360) + 360) % 360;
+
+export const getRotatedBounds = (imageWidth: number, imageHeight: number, rotationDegrees: number) => {
+    const radians = normalizeRotation(rotationDegrees) * Math.PI / 180;
+    const cos = Math.abs(Math.cos(radians));
+    const sin = Math.abs(Math.sin(radians));
+
+    return {
+        width: imageWidth * cos + imageHeight * sin,
+        height: imageWidth * sin + imageHeight * cos,
+    };
+};
+
+export const rotatePointBetweenAngles = (
+    point: { x: number; y: number },
+    imageWidth: number,
+    imageHeight: number,
+    fromDegrees: number,
+    toDegrees: number,
+) => {
+    if (imageWidth <= 0 || imageHeight <= 0) return point;
+
+    const fromBounds = getRotatedBounds(imageWidth, imageHeight, fromDegrees);
+    const toBounds = getRotatedBounds(imageWidth, imageHeight, toDegrees);
+    const deltaRad = (toDegrees - fromDegrees) * Math.PI / 180;
+
+    const cxFrom = fromBounds.width / 2;
+    const cyFrom = fromBounds.height / 2;
+    const cxTo = toBounds.width / 2;
+    const cyTo = toBounds.height / 2;
+
+    const relX = point.x - cxFrom;
+    const relY = point.y - cyFrom;
+    const cos = Math.cos(deltaRad);
+    const sin = Math.sin(deltaRad);
+
+    return {
+        x: relX * cos - relY * sin + cxTo,
+        y: relX * sin + relY * cos + cyTo,
+    };
+};
+
 export const updateActiveWorkspace = (state: StoreState, updater: (ws: Workspace) => Partial<Workspace>): Partial<StoreState> => {
     const activeWsIndex = state.workspaces.findIndex(w => w.id === state.activeWorkspaceId);
     if (activeWsIndex === -1) return {};

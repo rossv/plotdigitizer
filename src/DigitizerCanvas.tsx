@@ -79,6 +79,9 @@ export const DigitizerCanvas = forwardRef<DigitizerHandle, DigitizerCanvasProps>
     const activeYAxisId = activeWorkspace?.activeYAxisId || '';
 
     const [image] = useImage(imageUrl || '', 'anonymous');
+    const imageRadians = (imageRotation * Math.PI) / 180;
+    const rotatedImageWidth = image ? (Math.abs(image.width * Math.cos(imageRadians)) + Math.abs(image.height * Math.sin(imageRadians))) : 0;
+    const rotatedImageHeight = image ? (Math.abs(image.width * Math.sin(imageRadians)) + Math.abs(image.height * Math.cos(imageRadians))) : 0;
     const stageRef = useRef<KonvaStage | null>(null);
     const containerRef = useRef<HTMLDivElement | null>(null);
 
@@ -588,8 +591,10 @@ export const DigitizerCanvas = forwardRef<DigitizerHandle, DigitizerCanvasProps>
               <KonvaImage
                 name="source-image"
                 image={image}
-                x={imageRotation === 90 ? image.height : imageRotation === 180 ? image.width : imageRotation === 270 ? 0 : 0}
-                y={imageRotation === 90 ? 0 : imageRotation === 180 ? image.height : imageRotation === 270 ? image.width : 0}
+                x={rotatedImageWidth / 2}
+                y={rotatedImageHeight / 2}
+                offsetX={image.width / 2}
+                offsetY={image.height / 2}
                 rotation={imageRotation}
                 opacity={0}
                 ref={(node) => {

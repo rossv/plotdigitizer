@@ -1,5 +1,5 @@
 import type { StoreSlice, WorkspaceSlice } from '../types';
-import { createInitialWorkspace, rotatePointClockwise, updateActiveWorkspace } from '../utils';
+import { createInitialWorkspace, normalizeRotation, rotatePointBetweenAngles, updateActiveWorkspace } from '../utils';
 import { sanitizeProjectData } from '../projectValidation';
 import { detectAxes } from '../../utils/autoDetect';
 import { calculateCalibration } from '../../utils/math';
@@ -201,7 +201,8 @@ export const createWorkspaceSlice: StoreSlice<WorkspaceSlice> = (set, get) => ({
         }
     },
 
-    rotateImageClockwise: async () => {
+    rotateImageByDegrees: async (deltaDegrees) => {
+        if (!Number.isFinite(deltaDegrees) || Math.abs(deltaDegrees) < 0.0001) return;
         const state = get();
         const ws = state.workspaces.find(w => w.id === state.activeWorkspaceId);
         if (!ws?.imageUrl) return;
@@ -210,9 +211,10 @@ export const createWorkspaceSlice: StoreSlice<WorkspaceSlice> = (set, get) => ({
             const { width, height } = await getImageDimensions(ws.imageUrl);
 
             set(curr => updateActiveWorkspace(curr, (active) => {
+                const nextRotation = normalizeRotation(active.imageRotation + deltaDegrees);
                 const rotateCalPoint = (point: { px: number; py: number; val: number } | null) => {
                     if (!point) return null;
-                    const rotated = rotatePointClockwise({ x: point.px, y: point.py }, width, height);
+                    const rotated = rotatePointBetweenAngles({ x: point.px, y: point.py }, width, height, active.imageRotation, nextRotation);
                     return { ...point, px: rotated.x, py: rotated.y };
                 };
 
@@ -234,22 +236,22 @@ export const createWorkspaceSlice: StoreSlice<WorkspaceSlice> = (set, get) => ({
                 const updatedSeries = active.series.map((series) => ({
                     ...series,
                     points: series.points.map((p) => {
-                        const rotated = rotatePointClockwise({ x: p.x, y: p.y }, width, height);
+                        const rotated = rotatePointBetweenAngles({ x: p.x, y: p.y }, width, height, active.imageRotation, nextRotation);
                         return { ...p, x: rotated.x, y: rotated.y };
                     }),
                     labelPosition: series.labelPosition
-                        ? rotatePointClockwise(series.labelPosition, width, height)
+                        ? rotatePointBetweenAngles(series.labelPosition, width, height, active.imageRotation, nextRotation)
                         : undefined,
                 }));
 
                 const newSinglePoints = active.singlePoints.map((p) => {
-                    const rotated = rotatePointClockwise({ x: p.x, y: p.y }, width, height);
+                    const rotated = rotatePointBetweenAngles({ x: p.x, y: p.y }, width, height, active.imageRotation, nextRotation);
                     return { ...p, x: rotated.x, y: rotated.y };
                 });
 
                 const newPendingPoint = active.pendingCalibrationPoint
                     ? (() => {
-                        const rotated = rotatePointClockwise({ x: active.pendingCalibrationPoint.px, y: active.pendingCalibrationPoint.py }, width, height);
+                        const rotated = rotatePointBetweenAngles({ x: active.pendingCalibrationPoint.px, y: active.pendingCalibrationPoint.py }, width, height, active.imageRotation, nextRotation);
                         return {
                             ...active.pendingCalibrationPoint,
                             px: rotated.x,
@@ -258,7 +260,6 @@ export const createWorkspaceSlice: StoreSlice<WorkspaceSlice> = (set, get) => ({
                     })()
                     : null;
 
-                const nextRotation = (((active.imageRotation + 90) % 360) as 0 | 90 | 180 | 270);
                 const newHistory = active.history ? active.history.slice(0, active.historyIndex + 1) : [];
                 newHistory.push({
                     series: updatedSeries,
@@ -266,7 +267,7 @@ export const createWorkspaceSlice: StoreSlice<WorkspaceSlice> = (set, get) => ({
                     yAxes: newYAxes,
                     xAxis: newXAxis,
                     imageRotation: nextRotation,
-                    description: 'Rotate Image 90° CW',
+                    description: `Rotate Image ${deltaDegrees.toFixed(2)}°`,
                 });
 
                 return {
@@ -285,5 +286,20 @@ export const createWorkspaceSlice: StoreSlice<WorkspaceSlice> = (set, get) => ({
             console.error(e);
             get().openModal({ type: 'alert', message: 'Failed to rotate image. Please try reloading the file.' });
         }
+    },
+
+    rotateImageClockwise: async () => {
+        await get().rotateImageByDegrees(90);
+    },
+
+    setImageRotation: async (degrees) => {
+        if (!Number.isFinite(degrees)) return;
+        const state = get();
+        const ws = state.workspaces.find(w => w.id === state.activeWorkspaceId);
+        if (!ws) return;
+        const normalizedTarget = normalizeRotation(degrees);
+        const delta = normalizedTarget - normalizeRotation(ws.imageRotation);
+        if (Math.abs(delta) < 0.0001) return;
+        await get().rotateImageByDegrees(delta);
     },
 });
