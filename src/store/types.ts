@@ -21,7 +21,7 @@ export interface Workspace {
     id: string;
     name: string;
     imageUrl: string | null;
-    imageRotation: 0 | 90 | 180 | 270;
+    imageRotation: number;
     mode: AppMode;
     xAxis: AxisCalibration;
     xAxisName: string;
@@ -31,7 +31,7 @@ export interface Workspace {
     activeSeriesId: string;
     pendingCalibrationPoint: { axis: 'X' | 'Y'; step: 1 | 2; px: number; py: number } | null;
     singlePoints: Point[];
-    history: { series: Series[]; singlePoints: Point[]; yAxes: YAxisDefinition[]; xAxis: AxisCalibration; imageRotation: 0 | 90 | 180 | 270; description: string }[];
+    history: { series: Series[]; singlePoints: Point[]; yAxes: YAxisDefinition[]; xAxis: AxisCalibration; imageRotation: number; description: string }[];
     historyIndex: number;
     selectedPointIds: string[];
 }
@@ -56,6 +56,8 @@ export interface WorkspaceSlice {
     setMode: (mode: AppMode) => void;
     autoDetectAxes: () => Promise<void>;
     rotateImageClockwise: () => Promise<void>;
+    rotateImageByDegrees: (deltaDegrees: number) => Promise<void>;
+    setImageRotation: (degrees: number) => Promise<void>;
 }
 
 export interface CalibrationSlice {

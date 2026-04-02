@@ -1,6 +1,6 @@
 import type { AppMode, AxisCalibration, CurveFitConfig, Point, Series, YAxisDefinition } from '../types';
 import type { Workspace } from './types';
-import { createInitialWorkspace } from './utils';
+import { createInitialWorkspace, normalizeRotation } from './utils';
 
 type ThemeMode = 'light' | 'dark';
 
@@ -150,8 +150,8 @@ const sanitizeWorkspace = (value: unknown, index: number): { workspace: Workspac
         id: value.id,
         name: value.name,
         imageUrl: typeof value.imageUrl === 'string' || value.imageUrl === null ? value.imageUrl : base.imageUrl,
-        imageRotation: value.imageRotation === 0 || value.imageRotation === 90 || value.imageRotation === 180 || value.imageRotation === 270
-            ? value.imageRotation
+        imageRotation: isFiniteNumber(value.imageRotation)
+            ? normalizeRotation(value.imageRotation)
             : base.imageRotation,
         mode: typeof value.mode === 'string' && APP_MODES.includes(value.mode as AppMode) ? value.mode as AppMode : base.mode,
         xAxis: sanitizeAxisCalibration(value.xAxis, base.xAxis),
