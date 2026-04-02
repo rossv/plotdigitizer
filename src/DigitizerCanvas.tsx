@@ -7,7 +7,7 @@ import useImage from 'use-image';
 import { CalibrationInput } from './components/CalibrationInput';
 import { WandVariationModal } from './components/WandVariationModal';
 import { traceLine, resamplePoints, simplifyRDP } from './utils/trace'; // Fixed import to include simplifyRDP
-import { pixelToData } from './utils/math';
+import { dataToPixel, pixelToData } from './utils/math';
 import { useStore } from './store';
 import { CalibrationHandle } from './components/CalibrationHandle';
 import { Magnifier } from './components/Magnifier';
@@ -647,14 +647,16 @@ export const DigitizerCanvas = forwardRef<DigitizerHandle, DigitizerCanvasProps>
                     return;
                   }
 
-                  // Inverse calibration
-                  if (xAxis.isLog) xVal = Math.log10(xVal);
-                  const px = (xVal - xAxis.intercept!) / xAxis.slope!;
+                  const pixelPoint = dataToPixel(xVal, yVal, xAxis, curveYAxis);
+                  if (!pixelPoint) {
+                    if (currentSegment.length > 0) {
+                      segments.push(currentSegment);
+                      currentSegment = [];
+                    }
+                    return;
+                  }
 
-                  if (curveYAxis.isLog) yVal = Math.log10(yVal);
-                  const py = (yVal - curveYAxis.intercept!) / curveYAxis.slope!;
-
-                  currentSegment.push(px, py);
+                  currentSegment.push(pixelPoint.x, pixelPoint.y);
                 }
               });
 
