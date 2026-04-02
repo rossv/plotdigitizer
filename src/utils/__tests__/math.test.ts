@@ -20,6 +20,22 @@ describe('math utils', () => {
         intercept: 0, // 0 - 0.02*0 = 0
     } as unknown as AxisCalibration;
 
+    const rotatedXAxis: AxisCalibration = {
+        p1: { px: 30, py: 100, val: 0 },
+        p2: { px: 110, py: 60, val: 100 },
+        isLog: false,
+        slope: 1,
+        intercept: 0,
+    } as unknown as AxisCalibration;
+
+    const rotatedYAxis: AxisCalibration = {
+        p1: { px: 30, py: 100, val: 0 },
+        p2: { px: 0, py: 20, val: 100 },
+        isLog: false,
+        slope: -1,
+        intercept: 100,
+    } as unknown as AxisCalibration;
+
     describe('dataToPixel', () => {
         it('should convert data to pixel coordinates for linear axes', () => {
             const result = dataToPixel(50, 50, linearAxis, linearAxis);
@@ -55,6 +71,16 @@ describe('math utils', () => {
             expect(pixels).not.toBeNull();
             expect(pixels!.x).toBeCloseTo(originalPx);
             expect(pixels!.y).toBeCloseTo(originalPy);
+        });
+
+        it('should preserve values for rotated/non-orthogonal axes', () => {
+            const data = pixelToData(46, 72, rotatedXAxis, rotatedYAxis);
+            expect(data).not.toBeNull();
+
+            const pixels = dataToPixel(data!.x, data!.y, rotatedXAxis, rotatedYAxis);
+            expect(pixels).not.toBeNull();
+            expect(pixels!.x).toBeCloseTo(46, 5);
+            expect(pixels!.y).toBeCloseTo(72, 5);
         });
     });
 });
