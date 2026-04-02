@@ -11,6 +11,7 @@ import { pixelToData } from './utils/math';
 import { useStore } from './store';
 import { CalibrationHandle } from './components/CalibrationHandle';
 import { Magnifier } from './components/Magnifier';
+import { getRotatedBounds } from './store/utils';
 
 // Animated Components
 const AnimatedCircle = (props: React.ComponentProps<typeof Circle>) => {
@@ -381,12 +382,20 @@ export const DigitizerCanvas = forwardRef<DigitizerHandle, DigitizerCanvasProps>
       } else if (mode === 'TRACE' || mode === 'TRACE_ADVANCED') {
         if (!image) return;
 
+        const rotation = ((imageRotation % 360) + 360) % 360;
+        const bounds = getRotatedBounds(image.width, image.height, rotation);
         const canvas = document.createElement('canvas');
-        canvas.width = image.width;
-        canvas.height = image.height;
+        canvas.width = Math.max(1, Math.ceil(bounds.width));
+        canvas.height = Math.max(1, Math.ceil(bounds.height));
         const ctx = canvas.getContext('2d');
         if (!ctx) return;
-        ctx.drawImage(image, 0, 0);
+
+        ctx.translate(canvas.width / 2, canvas.height / 2);
+        if (rotation !== 0) {
+          ctx.rotate((rotation * Math.PI) / 180);
+        }
+        ctx.drawImage(image, -image.width / 2, -image.height / 2);
+        ctx.setTransform(1, 0, 0, 1, 0, 0);
 
         const pData = ctx.getImageData(Math.round(ptr.x), Math.round(ptr.y), 1, 1).data;
         const targetColor = { r: pData[0], g: pData[1], b: pData[2] };
