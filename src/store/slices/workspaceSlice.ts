@@ -149,11 +149,21 @@ export const createWorkspaceSlice: StoreSlice<WorkspaceSlice> = (set, get) => ({
                     return y;
                 });
 
+                const newHistory = ws.history ? ws.history.slice(0, ws.historyIndex + 1) : [];
+                newHistory.push({
+                    series: ws.series,
+                    yAxes: newYAxes,
+                    xAxis: newXAxis,
+                    description: 'Auto Calibrate Axes',
+                });
+
                 return {
                     xAxis: newXAxis,
                     xAxisName: newXAxisName,
                     yAxes: newYAxes,
                     mode: 'IDLE',
+                    history: newHistory,
+                    historyIndex: newHistory.length - 1,
                 };
             }));
 
