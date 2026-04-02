@@ -437,6 +437,11 @@ export const DigitizerCanvas = forwardRef<DigitizerHandle, DigitizerCanvasProps>
       return [...seriesPoints, ...singlePts];
     }, [activeWorkspace?.series, activeWorkspace?.singlePoints, activeWorkspace?.selectedPointIds]);
 
+    const isPointSelectable = React.useCallback((pointSeriesId: string, isSinglePoint?: boolean) => {
+      if (!activeWorkspace) return false;
+      return Boolean(isSinglePoint) || pointSeriesId === activeWorkspace.activeSeriesId;
+    }, [activeWorkspace]);
+
     const handleStageMouseDown = (e: KonvaEventObject<MouseEvent>) => {
       if (mode !== 'SELECT') return;
 
@@ -466,7 +471,7 @@ export const DigitizerCanvas = forwardRef<DigitizerHandle, DigitizerCanvasProps>
           const selectedIds: string[] = [];
           if (activeWorkspace) {
             points.forEach(p => {
-              if (p.seriesId === activeWorkspace.activeSeriesId) {
+              if (isPointSelectable(p.seriesId, p.isSinglePoint)) {
                 if (p.x >= box.x && p.x <= box.x + box.width && p.y >= box.y && p.y <= box.y + box.height) {
                   selectedIds.push(p.id);
                 }
@@ -986,7 +991,7 @@ export const DigitizerCanvas = forwardRef<DigitizerHandle, DigitizerCanvasProps>
                     onClick={(e: KonvaEventObject<MouseEvent>) => {
                       e.cancelBubble = true;
                       if (mode === 'SELECT' || mode === 'DIGITIZE' || mode === 'SINGLE_POINT') {
-                        if (p.seriesId === activeWorkspace.activeSeriesId) {
+                        if (isPointSelectable(p.seriesId, p.isSinglePoint)) {
                           togglePointSelection(p.id, e.evt.ctrlKey || e.evt.shiftKey);
                         }
                       }
@@ -1036,7 +1041,7 @@ export const DigitizerCanvas = forwardRef<DigitizerHandle, DigitizerCanvasProps>
                   onClick={(e: KonvaEventObject<MouseEvent>) => {
                     e.cancelBubble = true;
                     if (mode === 'SELECT' || mode === 'DIGITIZE' || mode === 'SINGLE_POINT') {
-                      if (p.seriesId === activeWorkspace.activeSeriesId) {
+                      if (isPointSelectable(p.seriesId, p.isSinglePoint)) {
                         togglePointSelection(p.id, e.evt.ctrlKey || e.evt.shiftKey);
                       }
                     }
