@@ -262,6 +262,7 @@ export const createWorkspaceSlice: StoreSlice<WorkspaceSlice> = (set, get) => ({
                 const newHistory = active.history ? active.history.slice(0, active.historyIndex + 1) : [];
                 newHistory.push({
                     series: updatedSeries,
+                    singlePoints: newSinglePoints,
                     yAxes: newYAxes,
                     xAxis: newXAxis,
                     imageRotation: nextRotation,
