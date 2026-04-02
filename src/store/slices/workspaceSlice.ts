@@ -14,6 +14,40 @@ const getImageDimensions = (url: string): Promise<{ width: number; height: numbe
     img.src = url;
 });
 
+const createRotatedImageDataUrl = (url: string, rotationDegrees: number): Promise<string> => new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => {
+        const width = img.naturalWidth || img.width;
+        const height = img.naturalHeight || img.height;
+        const rotation = normalizeRotation(rotationDegrees);
+        if (rotation === 0) {
+            resolve(url);
+            return;
+        }
+
+        const radians = (rotation * Math.PI) / 180;
+        const rotatedWidth = Math.ceil(Math.abs(width * Math.cos(radians)) + Math.abs(height * Math.sin(radians)));
+        const rotatedHeight = Math.ceil(Math.abs(width * Math.sin(radians)) + Math.abs(height * Math.cos(radians)));
+
+        const canvas = document.createElement('canvas');
+        canvas.width = Math.max(1, rotatedWidth);
+        canvas.height = Math.max(1, rotatedHeight);
+        const ctx = canvas.getContext('2d');
+        if (!ctx) {
+            reject(new Error('Failed to initialize canvas for rotated image.'));
+            return;
+        }
+
+        ctx.translate(canvas.width / 2, canvas.height / 2);
+        ctx.rotate(radians);
+        ctx.drawImage(img, -width / 2, -height / 2);
+        ctx.setTransform(1, 0, 0, 1, 0, 0);
+        resolve(canvas.toDataURL('image/png'));
+    };
+    img.onerror = () => reject(new Error('Failed to load image for auto-detect.'));
+    img.src = url;
+});
+
 export const createWorkspaceSlice: StoreSlice<WorkspaceSlice> = (set, get) => ({
     workspaces: [initWs],
     activeWorkspaceId: initWs.id,
@@ -79,7 +113,8 @@ export const createWorkspaceSlice: StoreSlice<WorkspaceSlice> = (set, get) => ({
         if (!ws || !ws.imageUrl) return;
 
         try {
-            const result = await detectAxes(ws.imageUrl);
+            const workingImageUrl = await createRotatedImageDataUrl(ws.imageUrl, ws.imageRotation);
+            const result = await detectAxes(workingImageUrl);
 
             const roiSize = { w: 60, h: 30 };
             const padding = 5;
@@ -96,12 +131,12 @@ export const createWorkspaceSlice: StoreSlice<WorkspaceSlice> = (set, get) => ({
             const yLabelRoi = { x: result.yAxis.p1.x - 80, y: yMid - 100, w: 50, h: 200 };
 
             const [x1Str, x2Str, y1Str, y2Str, xName, yName] = await Promise.all([
-                recognizeText(ws.imageUrl, xP1Roi, { whitelist: '0123456789.-' }),
-                recognizeText(ws.imageUrl, xP2Roi, { whitelist: '0123456789.-' }),
-                recognizeText(ws.imageUrl, yP1Roi, { whitelist: '0123456789.-' }),
-                recognizeText(ws.imageUrl, yP2Roi, { whitelist: '0123456789.-' }),
-                recognizeText(ws.imageUrl, xLabelRoi),
-                recognizeText(ws.imageUrl, yLabelRoi),
+                recognizeText(workingImageUrl, xP1Roi, { whitelist: '0123456789.-' }),
+                recognizeText(workingImageUrl, xP2Roi, { whitelist: '0123456789.-' }),
+                recognizeText(workingImageUrl, yP1Roi, { whitelist: '0123456789.-' }),
+                recognizeText(workingImageUrl, yP2Roi, { whitelist: '0123456789.-' }),
+                recognizeText(workingImageUrl, xLabelRoi),
+                recognizeText(workingImageUrl, yLabelRoi),
             ]);
 
             const parseVal = (s: string) => {
