@@ -70,6 +70,7 @@ export const DigitizerCanvas = forwardRef<DigitizerHandle, DigitizerCanvasProps>
     const activeWorkspace = workspaces.find(w => w.id === activeWorkspaceId);
 
     const imageUrl = activeWorkspace?.imageUrl || '';
+    const imageRotation = activeWorkspace?.imageRotation || 0;
     const mode = activeWorkspace?.mode;
     const xAxis = activeWorkspace?.xAxis;
     const xAxisName = activeWorkspace?.xAxisName || '';
@@ -587,6 +588,9 @@ export const DigitizerCanvas = forwardRef<DigitizerHandle, DigitizerCanvasProps>
               <KonvaImage
                 name="source-image"
                 image={image}
+                x={imageRotation === 90 ? image.height : imageRotation === 180 ? image.width : imageRotation === 270 ? 0 : 0}
+                y={imageRotation === 90 ? 0 : imageRotation === 180 ? image.height : imageRotation === 270 ? image.width : 0}
+                rotation={imageRotation}
                 opacity={0}
                 ref={(node) => {
                   if (node) {

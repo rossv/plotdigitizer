@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Plus, ScanLine, Image as ImageIcon, Sun, Moon, Trash2, Download, Database, Undo, Redo, Camera, Copy, ImageOff, Save, FolderOpen, X, MousePointer2, Magnet, HelpCircle, MapPin, Check, CheckCircle2, Wand2, Sparkles, Activity, RefreshCw } from 'lucide-react';
+import { Plus, ScanLine, Image as ImageIcon, Sun, Moon, Trash2, Download, Database, Undo, Redo, Camera, Copy, ImageOff, Save, FolderOpen, X, MousePointer2, Magnet, HelpCircle, MapPin, Check, CheckCircle2, Wand2, Sparkles, Activity, RefreshCw, RotateCw } from 'lucide-react';
 import { DigitizerCanvas } from './DigitizerCanvas';
 import type { DigitizerHandle } from './DigitizerCanvas';
 import { useStore } from './store';
@@ -85,6 +85,7 @@ export default function App() {
     startCalibration,
     resampleActiveSeries,
     autoDetectAxes,
+    rotateImageClockwise,
     updateCalibrationPointValue,
     snapSeriesToFit,
   } = useStore();
@@ -108,6 +109,7 @@ export default function App() {
 
   const activeSeries = series.find((s) => s.id === activeSeriesId);
   const activeSeriesYAxis = yAxes.find((y) => y.id === activeSeries?.yAxisId)?.calibration;
+  const hasAnyPoints = series.some((s) => s.points.length > 0) || (activeWorkspace?.singlePoints.length ?? 0) > 0;
 
   const isCalibrated = !!xAxis && !!activeSeriesYAxis &&
     xAxis.slope !== null && Number.isFinite(xAxis.slope) &&
@@ -260,6 +262,30 @@ export default function App() {
                 <Database className="h-4 w-4" />
               </button>
             </div>
+
+            <button
+              onClick={() => {
+                const needsWarning = isXCalibrated || hasAnyPoints;
+                if (!needsWarning) {
+                  rotateImageClockwise();
+                  return;
+                }
+
+                openModal({
+                  type: 'confirm',
+                  title: 'Rotate image?',
+                  message: 'This rotates the image 90° clockwise and moves all calibration points and digitized points to keep data aligned. You can undo this action.',
+                  confirmLabel: 'Rotate',
+                  onConfirm: () => rotateImageClockwise(),
+                });
+              }}
+              disabled={!activeWorkspace.imageUrl}
+              title="Rotate loaded image 90° clockwise"
+              className="w-full flex items-center justify-center gap-2 px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-900/20 disabled:opacity-50 disabled:cursor-not-allowed text-xs font-medium transition-all active:scale-95"
+            >
+              <RotateCw className="h-4 w-4" />
+              Rotate image 90°
+            </button>
           </div>
 
           {/* Axes Bin */}

@@ -150,6 +150,9 @@ const sanitizeWorkspace = (value: unknown, index: number): { workspace: Workspac
         id: value.id,
         name: value.name,
         imageUrl: typeof value.imageUrl === 'string' || value.imageUrl === null ? value.imageUrl : base.imageUrl,
+        imageRotation: value.imageRotation === 0 || value.imageRotation === 90 || value.imageRotation === 180 || value.imageRotation === 270
+            ? value.imageRotation
+            : base.imageRotation,
         mode: typeof value.mode === 'string' && APP_MODES.includes(value.mode as AppMode) ? value.mode as AppMode : base.mode,
         xAxis: sanitizeAxisCalibration(value.xAxis, base.xAxis),
         xAxisName: asString(value.xAxisName, base.xAxisName),
@@ -210,7 +213,7 @@ const sanitizeLegacyWorkspace = (projectData: Record<string, unknown>): Workspac
         ws.imageUrl = projectData.imageUrl;
     }
 
-    ws.history = [{ series: ws.series, singlePoints: ws.singlePoints, yAxes: ws.yAxes, xAxis: ws.xAxis, description: 'Initial State' }];
+    ws.history = [{ series: ws.series, singlePoints: ws.singlePoints, yAxes: ws.yAxes, xAxis: ws.xAxis, imageRotation: ws.imageRotation, description: 'Initial State' }];
     ws.historyIndex = 0;
 
     return ws;

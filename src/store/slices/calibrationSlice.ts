@@ -31,7 +31,7 @@ export const createCalibrationSlice: StoreSlice<CalibrationSlice> = (set) => ({
                 });
 
                 const newHistory = ws.history ? ws.history.slice(0, ws.historyIndex + 1) : [];
-                newHistory.push({ series: updatedSeries, singlePoints: ws.singlePoints, yAxes: ws.yAxes, xAxis: newXAxis, description: 'Toggle X Log' });
+                newHistory.push({ series: updatedSeries, singlePoints: ws.singlePoints, yAxes: ws.yAxes, xAxis: newXAxis, imageRotation: ws.imageRotation, description: 'Toggle X Log' });
 
                 return { xAxis: newXAxis, series: updatedSeries, history: newHistory, historyIndex: newHistory.length - 1 };
             } catch (e) {
@@ -115,7 +115,7 @@ export const createCalibrationSlice: StoreSlice<CalibrationSlice> = (set) => ({
         });
 
         const newHistory = ws.history ? ws.history.slice(0, ws.historyIndex + 1) : [];
-        newHistory.push({ series: updatedSeries, singlePoints: ws.singlePoints, yAxes: updatedYAxes, xAxis: ws.xAxis, description: 'Toggle Y Log' });
+        newHistory.push({ series: updatedSeries, singlePoints: ws.singlePoints, yAxes: updatedYAxes, xAxis: ws.xAxis, imageRotation: ws.imageRotation, description: 'Toggle Y Log' });
 
         return { yAxes: updatedYAxes, series: updatedSeries, history: newHistory, historyIndex: newHistory.length - 1 };
     })),
@@ -172,7 +172,7 @@ export const createCalibrationSlice: StoreSlice<CalibrationSlice> = (set) => ({
                     });
 
                     const newHistory = ws.history ? ws.history.slice(0, ws.historyIndex + 1) : [];
-                    newHistory.push({ series: updatedSeries, singlePoints: ws.singlePoints, yAxes: ws.yAxes, xAxis: newAxis, description: 'Calibrate X' });
+                    newHistory.push({ series: updatedSeries, singlePoints: ws.singlePoints, yAxes: ws.yAxes, xAxis: newAxis, imageRotation: ws.imageRotation, description: 'Calibrate X' });
 
                     return { xAxis: newAxis, pendingCalibrationPoint: null, mode: 'IDLE', series: updatedSeries, history: newHistory, historyIndex: newHistory.length - 1 };
                 } catch (e) {
@@ -218,7 +218,7 @@ export const createCalibrationSlice: StoreSlice<CalibrationSlice> = (set) => ({
                 });
 
                 const newHistory = ws.history ? ws.history.slice(0, ws.historyIndex + 1) : [];
-                newHistory.push({ series: updatedSeries, singlePoints: ws.singlePoints, yAxes: updatedYAxes, xAxis: ws.xAxis, description: 'Calibrate Y' });
+                newHistory.push({ series: updatedSeries, singlePoints: ws.singlePoints, yAxes: updatedYAxes, xAxis: ws.xAxis, imageRotation: ws.imageRotation, description: 'Calibrate Y' });
 
                 return {
                     yAxes: updatedYAxes,

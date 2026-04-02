@@ -85,6 +85,7 @@ export const createInitialWorkspace = (name: string): Workspace => ({
     id: uuidv4(),
     name,
     imageUrl: null,
+    imageRotation: 0,
     mode: 'IDLE',
     xAxis: { ...initialAxis },
     xAxisName: 'X Axis',
@@ -136,12 +137,21 @@ export const createInitialWorkspace = (name: string): Workspace => ({
             ],
             singlePoints: [],
             xAxis: { ...initialAxis },
+            imageRotation: 0,
             description: 'Initial State'
         }
     ],
     historyIndex: 0,
     selectedPointIds: [],
 });
+
+export const rotatePointClockwise = (point: { x: number; y: number }, imageWidth: number, imageHeight: number) => {
+    if (imageWidth <= 0 || imageHeight <= 0) return point;
+    return {
+        x: imageHeight - point.y,
+        y: point.x,
+    };
+};
 
 export const updateActiveWorkspace = (state: StoreState, updater: (ws: Workspace) => Partial<Workspace>): Partial<StoreState> => {
     const activeWsIndex = state.workspaces.findIndex(w => w.id === state.activeWorkspaceId);
