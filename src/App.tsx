@@ -272,30 +272,6 @@ export default function App() {
               </button>
             </div>
 
-            <button
-              onClick={() => {
-                const needsWarning = isXCalibrated || hasAnyPoints;
-                if (!needsWarning) {
-                  rotateImageClockwise();
-                  return;
-                }
-
-                openModal({
-                  type: 'confirm',
-                  title: 'Rotate image?',
-                  message: 'This rotates the image 90° clockwise and moves all calibration points and digitized points to keep data aligned. You can undo this action.',
-                  confirmLabel: 'Rotate',
-                  onConfirm: () => rotateImageClockwise(),
-                });
-              }}
-              disabled={!activeWorkspace.imageUrl}
-              title="Rotate loaded image 90° clockwise"
-              className="w-full flex items-center justify-center gap-2 px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-900/20 disabled:opacity-50 disabled:cursor-not-allowed text-xs font-medium transition-all active:scale-95"
-            >
-              <RotateCw className="h-4 w-4" />
-              Rotate image 90°
-            </button>
-
             <div className="rounded-lg border border-slate-200 dark:border-slate-700 overflow-hidden">
               <button
                 onClick={() => setIsRotationControlsOpen((prev) => !prev)}
@@ -305,13 +281,36 @@ export default function App() {
               >
                 <span className="flex items-center gap-2">
                   <RotateCw className="h-3.5 w-3.5" />
-                  {isRotationControlsOpen ? 'Hide advanced rotation controls' : 'Show advanced rotation controls'}
+                  Rotate
                 </span>
                 <ChevronDown className={`h-4 w-4 transition-transform duration-300 ${isRotationControlsOpen ? 'rotate-180' : ''}`} />
               </button>
               <div className={`grid transition-all duration-300 ease-out ${isRotationControlsOpen ? 'grid-rows-[1fr] opacity-100' : 'grid-rows-[0fr] opacity-0'}`}>
                 <div className="overflow-hidden">
                   <div className="p-2 border-t border-slate-200 dark:border-slate-700 space-y-2">
+                    <button
+                      onClick={() => {
+                        const needsWarning = isXCalibrated || hasAnyPoints;
+                        if (!needsWarning) {
+                          rotateImageClockwise();
+                          return;
+                        }
+
+                        openModal({
+                          type: 'confirm',
+                          title: 'Rotate image?',
+                          message: 'This rotates the image 90° clockwise and moves all calibration points and digitized points to keep data aligned. You can undo this action.',
+                          confirmLabel: 'Rotate',
+                          onConfirm: () => rotateImageClockwise(),
+                        });
+                      }}
+                      disabled={!activeWorkspace.imageUrl}
+                      title="Rotate loaded image 90° clockwise"
+                      className="w-full flex items-center justify-center gap-2 px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-900/20 disabled:opacity-50 disabled:cursor-not-allowed text-xs font-medium transition-all active:scale-95"
+                    >
+                      <RotateCw className="h-4 w-4" />
+                      Rotate image 90°
+                    </button>
                     <div className="flex items-center gap-2">
                       <input
                         type="number"
