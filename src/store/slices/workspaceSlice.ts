@@ -152,6 +152,7 @@ export const createWorkspaceSlice: StoreSlice<WorkspaceSlice> = (set, get) => ({
                 const newHistory = ws.history ? ws.history.slice(0, ws.historyIndex + 1) : [];
                 newHistory.push({
                     series: ws.series,
+                    singlePoints: ws.singlePoints,
                     yAxes: newYAxes,
                     xAxis: newXAxis,
                     description: 'Auto Calibrate Axes',
