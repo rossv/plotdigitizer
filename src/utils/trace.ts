@@ -126,14 +126,14 @@ export const traceLine = (
     }
 
     // 3. Walk Backward
-    // Start from original point again. Reset momentum?
-    // We want to go in the "opposite" direction of the first step we took?
-    // Actually, we just want to find *any* valid unvisited neighbor from start.
-    // And then establish momentum from *that* direction.
+    // Seed momentum as the negative of the first forward step so the backward
+    // walk naturally moves in the opposite direction from the start.
+    const firstForwardDx = deque.length > 1 ? deque[1].x - start.x : 0;
+    const firstForwardDy = deque.length > 1 ? deque[1].y - start.y : 0;
 
     current = start;
-    lastDx = 0;
-    lastDy = 0;
+    lastDx = -firstForwardDx;
+    lastDy = -firstForwardDy;
     steps = 0;
 
     // Check neighbors of start to find the backward path start
@@ -188,43 +188,53 @@ export const traceLinePath = (
     return smartWandTrace(imageData, { x: startX, y: startY });
 };
 
-// Polyline Simplification
+// Polyline Simplification (iterative Ramer-Douglas-Peucker)
 export const simplifyRDP = (points: { x: number, y: number }[], epsilon: number): { x: number, y: number }[] => {
     if (points.length < 3) return points;
 
-    let dmax = 0;
-    let index = 0;
-    const end = points.length - 1;
+    const keep = new Uint8Array(points.length);
+    keep[0] = 1;
+    keep[points.length - 1] = 1;
 
-    for (let i = 1; i < end; i++) {
-        const x1 = points[0].x, y1 = points[0].y;
+    // Stack holds [startIndex, endIndex] ranges to process
+    const stack: [number, number][] = [[0, points.length - 1]];
+
+    while (stack.length > 0) {
+        const [start, end] = stack.pop()!;
+        if (end - start < 2) continue;
+
+        const x1 = points[start].x, y1 = points[start].y;
         const x2 = points[end].x, y2 = points[end].y;
-        const x0 = points[i].x, y0 = points[i].y;
-
-        let d = 0;
         const dx = x2 - x1;
         const dy = y2 - y1;
-        if (dx === 0 && dy === 0) {
-            d = Math.sqrt((x0 - x1) ** 2 + (y0 - y1) ** 2);
-        } else {
-            const num = Math.abs(dy * x0 - dx * y0 + x2 * y1 - y2 * x1);
-            const den = Math.sqrt(dx * dx + dy * dy);
-            d = num / den;
+        const den = Math.sqrt(dx * dx + dy * dy);
+
+        let dmax = 0;
+        let index = start;
+
+        for (let i = start + 1; i < end; i++) {
+            const x0 = points[i].x, y0 = points[i].y;
+            let d: number;
+            if (den === 0) {
+                d = Math.sqrt((x0 - x1) ** 2 + (y0 - y1) ** 2);
+            } else {
+                const num = Math.abs(dy * x0 - dx * y0 + x2 * y1 - y2 * x1);
+                d = num / den;
+            }
+            if (d > dmax) {
+                dmax = d;
+                index = i;
+            }
         }
 
-        if (d > dmax) {
-            index = i;
-            dmax = d;
+        if (dmax > epsilon) {
+            keep[index] = 1;
+            stack.push([start, index]);
+            stack.push([index, end]);
         }
     }
 
-    if (dmax > epsilon) {
-        const recResults1 = simplifyRDP(points.slice(0, index + 1), epsilon);
-        const recResults2 = simplifyRDP(points.slice(index), epsilon);
-        return [...recResults1.slice(0, -1), ...recResults2];
-    } else {
-        return [points[0], points[end]];
-    }
+    return points.filter((_, i) => keep[i]);
 };
 
 // Resample Points (Interpolation)
