@@ -14,40 +14,6 @@ const getImageDimensions = (url: string): Promise<{ width: number; height: numbe
     img.src = url;
 });
 
-const createRotatedImageDataUrl = (url: string, rotationDegrees: number): Promise<string> => new Promise((resolve, reject) => {
-    const img = new Image();
-    img.onload = () => {
-        const width = img.naturalWidth || img.width;
-        const height = img.naturalHeight || img.height;
-        const rotation = normalizeRotation(rotationDegrees);
-        if (rotation === 0) {
-            resolve(url);
-            return;
-        }
-
-        const radians = (rotation * Math.PI) / 180;
-        const rotatedWidth = Math.ceil(Math.abs(width * Math.cos(radians)) + Math.abs(height * Math.sin(radians)));
-        const rotatedHeight = Math.ceil(Math.abs(width * Math.sin(radians)) + Math.abs(height * Math.cos(radians)));
-
-        const canvas = document.createElement('canvas');
-        canvas.width = Math.max(1, rotatedWidth);
-        canvas.height = Math.max(1, rotatedHeight);
-        const ctx = canvas.getContext('2d');
-        if (!ctx) {
-            reject(new Error('Failed to initialize canvas for rotated image.'));
-            return;
-        }
-
-        ctx.translate(canvas.width / 2, canvas.height / 2);
-        ctx.rotate(radians);
-        ctx.drawImage(img, -width / 2, -height / 2);
-        ctx.setTransform(1, 0, 0, 1, 0, 0);
-        resolve(canvas.toDataURL('image/png'));
-    };
-    img.onerror = () => reject(new Error('Failed to load image for auto-detect.'));
-    img.src = url;
-});
-
 export const createWorkspaceSlice: StoreSlice<WorkspaceSlice> = (set, get) => ({
     workspaces: [initWs],
     activeWorkspaceId: initWs.id,
@@ -113,8 +79,9 @@ export const createWorkspaceSlice: StoreSlice<WorkspaceSlice> = (set, get) => ({
         if (!ws || !ws.imageUrl) return;
 
         try {
-            const workingImageUrl = await createRotatedImageDataUrl(ws.imageUrl, ws.imageRotation);
+            const workingImageUrl = ws.imageUrl;
             const result = await detectAxes(workingImageUrl);
+            const { width: imageWidth, height: imageHeight } = await getImageDimensions(ws.imageUrl);
 
             const roiSize = { w: 60, h: 30 };
             const padding = 5;
@@ -145,10 +112,23 @@ export const createWorkspaceSlice: StoreSlice<WorkspaceSlice> = (set, get) => ({
                 return isNaN(n) ? NaN : n;
             };
 
-            const xP1 = { px: parseFloat(String(result.xAxis.p1.x)), py: parseFloat(String(result.xAxis.p1.y)), val: parseVal(x1Str) };
-            const xP2 = { px: parseFloat(String(result.xAxis.p2.x)), py: parseFloat(String(result.xAxis.p2.y)), val: parseVal(x2Str) };
-            const yP1 = { px: parseFloat(String(result.yAxis.p1.x)), py: parseFloat(String(result.yAxis.p1.y)), val: parseVal(y1Str) };
-            const yP2 = { px: parseFloat(String(result.yAxis.p2.x)), py: parseFloat(String(result.yAxis.p2.y)), val: parseVal(y2Str) };
+            const rotateDetectedPoint = (point: { x: number; y: number }) => rotatePointBetweenAngles(
+                point,
+                imageWidth,
+                imageHeight,
+                0,
+                ws.imageRotation,
+            );
+
+            const xP1Rotated = rotateDetectedPoint(result.xAxis.p1);
+            const xP2Rotated = rotateDetectedPoint(result.xAxis.p2);
+            const yP1Rotated = rotateDetectedPoint(result.yAxis.p1);
+            const yP2Rotated = rotateDetectedPoint(result.yAxis.p2);
+
+            const xP1 = { px: xP1Rotated.x, py: xP1Rotated.y, val: parseVal(x1Str) };
+            const xP2 = { px: xP2Rotated.x, py: xP2Rotated.y, val: parseVal(x2Str) };
+            const yP1 = { px: yP1Rotated.x, py: yP1Rotated.y, val: parseVal(y1Str) };
+            const yP2 = { px: yP2Rotated.x, py: yP2Rotated.y, val: parseVal(y2Str) };
 
             set(state => updateActiveWorkspace(state, (ws) => {
                 const newXAxis = { ...ws.xAxis, p1: xP1, p2: xP2, slope: null as number | null, intercept: null as number | null };
