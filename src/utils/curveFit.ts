@@ -2,6 +2,18 @@ import regression, { type DataPoint } from 'regression';
 import type { Point } from '../types';
 import { solveLinearSystem } from './matrix';
 
+const safeR2 = (data: DataPoint[], predict: (x: number) => number): number => {
+    const yMean = data.reduce((acc, p) => acc + p[1], 0) / data.length;
+    let ssTot = 0;
+    let ssRes = 0;
+    for (const [x, y] of data) {
+        ssTot += (y - yMean) ** 2;
+        ssRes += (y - predict(x)) ** 2;
+    }
+    if (ssTot < 1e-14) return ssRes < 1e-14 ? 1 : 0;
+    return 1 - ssRes / ssTot;
+};
+
 export interface FitResult {
     points: Point[];
     equation: string;
@@ -28,14 +40,11 @@ export const fitLinear = (points: Point[], constraintY?: number): FitResult | nu
         // m = sum(x*y') / sum(x^2)
         let sumXY = 0;
         let sumX2 = 0;
-        let sumTotalSquares = 0;
-        const yMean = data.reduce((acc, p) => acc + p[1], 0) / data.length;
 
         for (const [x, y] of data) {
             const yPrime = y - constraintY;
             sumXY += x * yPrime;
             sumX2 += x * x;
-            sumTotalSquares += Math.pow(y - yMean, 2);
         }
 
         if (Math.abs(sumX2) < 1e-10) return null; // All x are 0?
@@ -43,14 +52,7 @@ export const fitLinear = (points: Point[], constraintY?: number): FitResult | nu
 
         predictFn = (x: number) => m * x + constraintY;
         equation = `y = ${m.toFixed(4)}x + ${constraintY.toFixed(4)}`;
-
-        // Calculate R2
-        let sumResidualSquares = 0;
-        for (const [x, y] of data) {
-            const pred = predictFn(x);
-            sumResidualSquares += Math.pow(y - pred, 2);
-        }
-        r2 = 1 - (sumResidualSquares / sumTotalSquares);
+        r2 = safeR2(data, predictFn);
 
     } else {
         const result = regression.linear(data, { precision: 10 });
@@ -146,15 +148,7 @@ export const fitPolynomial = (points: Point[], order: number = 2, constraintY?: 
         }
         equation = eq;
 
-        // Calc R2
-        const yMean = data.reduce((acc, p) => acc + p[1], 0) / data.length;
-        let sumResidualSquares = 0;
-        let sumTotalSquares = 0;
-        for (const [x, y] of data) {
-            sumTotalSquares += Math.pow(y - yMean, 2);
-            sumResidualSquares += Math.pow(y - predictFn(x), 2);
-        }
-        r2 = 1 - (sumResidualSquares / sumTotalSquares);
+        r2 = safeR2(data, predictFn);
 
     } else {
         const result = regression.polynomial(data, { order, precision: 10 });
@@ -211,16 +205,7 @@ export const fitExponential = (points: Point[], constraintY?: number): FitResult
 
         predictFn = (x: number) => constraintY * Math.exp(b * x);
         equation = `y = ${constraintY.toFixed(4)}e^(${b.toFixed(4)}x)`;
-
-        // R2 on original data
-        const yMean = data.reduce((acc, p) => acc + p[1], 0) / data.length;
-        let sumResidualSquares = 0;
-        let sumTotalSquares = 0;
-        for (const [x, y] of data) {
-            sumTotalSquares += Math.pow(y - yMean, 2);
-            sumResidualSquares += Math.pow(y - predictFn(x), 2);
-        }
-        r2 = 1 - (sumResidualSquares / sumTotalSquares);
+        r2 = safeR2(data, predictFn);
 
     } else {
         const result = regression.exponential(data, { precision: 10 });
@@ -368,6 +353,7 @@ export const generatePointsFromPredict = (
     seriesId: string
 ): Point[] => {
     if (count < 2) return [];
+    if (minX === maxX) return [];
 
     const step = (maxX - minX) / (count - 1);
     const newPoints: Point[] = [];

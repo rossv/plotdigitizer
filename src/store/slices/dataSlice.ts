@@ -4,9 +4,11 @@ import { updateActiveWorkspace, updateSeriesFit, SERIES_PALETTE, getRandomColor 
 import { findBestFit, generatePointsFromPredict } from '../../utils/curveFit';
 import { dataToPixel, pixelToData } from '../../utils/math';
 
+const MAX_HISTORY = 100;
+
 export const createDataSlice: StoreSlice<DataSlice> = (set) => ({
     addSeries: () => set(state => updateActiveWorkspace(state, (ws) => {
-        const id = `series-${ws.series.length + 1}`;
+        const id = uuidv4();
         return {
             series: [
                 ...ws.series,
@@ -64,8 +66,8 @@ export const createDataSlice: StoreSlice<DataSlice> = (set) => ({
 
         return {
             series: updatedSeries,
-            history: newHistory,
-            historyIndex: newHistory.length - 1
+            history: newHistory.slice(-MAX_HISTORY),
+            historyIndex: Math.min(newHistory.length, MAX_HISTORY) - 1
         };
     })),
 
@@ -111,13 +113,10 @@ export const createDataSlice: StoreSlice<DataSlice> = (set) => ({
         const yAxis = ws.yAxes.find(y => y.id === activeSeries.yAxisId)?.calibration;
         if (!yAxis) return {};
 
-        const newPoints: Point[] = newPointsData.map(p => {
+        const newPoints: Point[] = newPointsData.flatMap(p => {
             const pixel = dataToPixel(p.dataX!, p.dataY!, ws.xAxis, yAxis);
-            return {
-                ...p,
-                x: pixel?.x || 0,
-                y: pixel?.y || 0
-            };
+            if (!pixel) return [];
+            return [{ ...p, x: pixel.x, y: pixel.y }];
         });
 
         const updatedSeries = ws.series.map(s => {
@@ -125,10 +124,10 @@ export const createDataSlice: StoreSlice<DataSlice> = (set) => ({
             return updateSeriesFit({
                 ...s,
                 fitConfig: {
+                    ...s.fitConfig,
                     enabled: true,
                     type: bestFit.config.type,
                     order: bestFit.config.order,
-                    interceptMode: 'auto'
                 },
                 points: newPoints
             });
@@ -139,8 +138,8 @@ export const createDataSlice: StoreSlice<DataSlice> = (set) => ({
 
         return {
             series: updatedSeries,
-            history: newHistory,
-            historyIndex: newHistory.length - 1
+            history: newHistory.slice(-MAX_HISTORY),
+            historyIndex: Math.min(newHistory.length, MAX_HISTORY) - 1
         };
     })),
 
@@ -165,7 +164,7 @@ export const createDataSlice: StoreSlice<DataSlice> = (set) => ({
 
         const updatedSeries = ws.series.map((s) => {
             if (s.id === ws.activeSeriesId) {
-                const newSeries = { ...s, points: [...s.points, newPoint].sort((a, b) => (a.dataX || 0) - (b.dataX || 0)) };
+                const newSeries = { ...s, points: [...s.points, newPoint].sort((a, b) => (a.dataX ?? 0) - (b.dataX ?? 0)) };
                 return updateSeriesFit(newSeries);
             }
             return s;
@@ -176,8 +175,8 @@ export const createDataSlice: StoreSlice<DataSlice> = (set) => ({
 
         return {
             series: updatedSeries,
-            history: newHistory,
-            historyIndex: newHistory.length - 1
+            history: newHistory.slice(-MAX_HISTORY),
+            historyIndex: Math.min(newHistory.length, MAX_HISTORY) - 1
         };
     })),
 
@@ -206,8 +205,8 @@ export const createDataSlice: StoreSlice<DataSlice> = (set) => ({
 
         return {
             singlePoints: updatedSinglePoints,
-            history: newHistory,
-            historyIndex: newHistory.length - 1
+            history: newHistory.slice(-MAX_HISTORY),
+            historyIndex: Math.min(newHistory.length, MAX_HISTORY) - 1
         };
     })),
 
@@ -236,7 +235,7 @@ export const createDataSlice: StoreSlice<DataSlice> = (set) => ({
 
         const updatedSeries = ws.series.map((s) => {
             if (s.id === ws.activeSeriesId) {
-                const newSeries = { ...s, points: [...s.points, ...newPoints].sort((a, b) => (a.dataX || 0) - (b.dataX || 0)) };
+                const newSeries = { ...s, points: [...s.points, ...newPoints].sort((a, b) => (a.dataX ?? 0) - (b.dataX ?? 0)) };
                 return updateSeriesFit(newSeries);
             }
             return s;
@@ -247,8 +246,8 @@ export const createDataSlice: StoreSlice<DataSlice> = (set) => ({
 
         return {
             series: updatedSeries,
-            history: newHistory,
-            historyIndex: newHistory.length - 1
+            history: newHistory.slice(-MAX_HISTORY),
+            historyIndex: Math.min(newHistory.length, MAX_HISTORY) - 1
         };
     })),
 
@@ -280,8 +279,8 @@ export const createDataSlice: StoreSlice<DataSlice> = (set) => ({
 
         return {
             series: updatedSeries,
-            history: newHistory,
-            historyIndex: newHistory.length - 1
+            history: newHistory.slice(-MAX_HISTORY),
+            historyIndex: Math.min(newHistory.length, MAX_HISTORY) - 1
         };
     })),
 
@@ -368,8 +367,8 @@ export const createDataSlice: StoreSlice<DataSlice> = (set) => ({
             series: updatedSeries,
             singlePoints: updatedSinglePoints,
             selectedPointIds: [],
-            history: newHistory,
-            historyIndex: newHistory.length - 1
+            history: newHistory.slice(-MAX_HISTORY),
+            historyIndex: Math.min(newHistory.length, MAX_HISTORY) - 1
         };
     })),
 
@@ -425,7 +424,7 @@ export const createDataSlice: StoreSlice<DataSlice> = (set) => ({
                     dataX: coords.x,
                     dataY: coords.y
                 };
-            }).sort((a, b) => (a.dataX || 0) - (b.dataX || 0));
+            }).sort((a, b) => (a.dataX ?? 0) - (b.dataX ?? 0));
             return updateSeriesFit({ ...s, points: newPoints });
         });
 
@@ -434,8 +433,8 @@ export const createDataSlice: StoreSlice<DataSlice> = (set) => ({
 
         return {
             series: updatedSeries,
-            history: newHistory,
-            historyIndex: newHistory.length - 1
+            history: newHistory.slice(-MAX_HISTORY),
+            historyIndex: Math.min(newHistory.length, MAX_HISTORY) - 1
         };
     })),
 
@@ -481,8 +480,8 @@ export const createDataSlice: StoreSlice<DataSlice> = (set) => ({
         return {
             series: updatedSeries,
             singlePoints: updatedSinglePoints,
-            history: newHistory,
-            historyIndex: newHistory.length - 1
+            history: newHistory.slice(-MAX_HISTORY),
+            historyIndex: Math.min(newHistory.length, MAX_HISTORY) - 1
         };
     })),
 
@@ -533,8 +532,8 @@ export const createDataSlice: StoreSlice<DataSlice> = (set) => ({
 
         return {
             series: updatedSeries,
-            history: newHistory,
-            historyIndex: newHistory.length - 1
+            history: newHistory.slice(-MAX_HISTORY),
+            historyIndex: Math.min(newHistory.length, MAX_HISTORY) - 1
         };
     })),
 
@@ -575,8 +574,8 @@ export const createDataSlice: StoreSlice<DataSlice> = (set) => ({
 
         return {
             series: updatedSeries,
-            history: newHistory,
-            historyIndex: newHistory.length - 1
+            history: newHistory.slice(-MAX_HISTORY),
+            historyIndex: Math.min(newHistory.length, MAX_HISTORY) - 1
         };
     })),
 });
