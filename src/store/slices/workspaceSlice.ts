@@ -1,9 +1,22 @@
+import Tesseract from 'tesseract.js';
 import type { StoreSlice, WorkspaceSlice } from '../types';
 import { createInitialWorkspace, normalizeRotation, rotatePointBetweenAngles, updateActiveWorkspace } from '../utils';
 import { sanitizeProjectData } from '../projectValidation';
 import { detectAxes } from '../../utils/autoDetect';
 import { calculateCalibration } from '../../utils/math';
 import { recognizeText } from '../../utils/ocr';
+
+// Handles standard floats, scientific notation (1e3, 1E-3), and exponent patterns (10^3, 10^-2, ×10³)
+const parseAxisValue = (s: string): number => {
+    let clean = s.trim();
+    // Superscript digits → ASCII
+    const sup = '⁰¹²³⁴⁵⁶⁷⁸⁹';
+    clean = clean.replace(/[⁰¹²³⁴⁵⁶⁷⁸⁹]/g, d => String(sup.indexOf(d)));
+    // "10^-3" or "10^3" style
+    clean = clean.replace(/10\s*[\^]\s*(-?\d+)/i, (_, e) => String(Math.pow(10, parseInt(e, 10))));
+    const n = parseFloat(clean.replace(/[^0-9.eE+\-]/g, ''));
+    return isNaN(n) ? NaN : n;
+};
 
 const initWs = createInitialWorkspace('Workspace 1');
 
@@ -83,34 +96,39 @@ export const createWorkspaceSlice: StoreSlice<WorkspaceSlice> = (set, get) => ({
             const result = await detectAxes(workingImageUrl);
             const { width: imageWidth, height: imageHeight } = await getImageDimensions(ws.imageUrl);
 
-            const roiSize = { w: 60, h: 30 };
-            const padding = 5;
+            // Adaptive ROI: scale with image size, with sensible minimums
+            const roiW = Math.round(Math.max(50, imageWidth * 0.07));
+            const roiH = Math.round(Math.max(25, imageHeight * 0.04));
+            const padding = Math.round(Math.max(4, imageWidth * 0.004));
 
-            const xP1Roi = { x: result.xAxis.p1.x - roiSize.w / 2, y: result.xAxis.p1.y + padding, w: roiSize.w, h: roiSize.h };
-            const xP2Roi = { x: result.xAxis.p2.x - roiSize.w / 2, y: result.xAxis.p2.y + padding, w: roiSize.w, h: roiSize.h };
-            const yP1Roi = { x: result.yAxis.p1.x - roiSize.w - padding, y: result.yAxis.p1.y - roiSize.h / 2, w: roiSize.w, h: roiSize.h };
-            const yP2Roi = { x: result.yAxis.p2.x - roiSize.w - padding, y: result.yAxis.p2.y - roiSize.h / 2, w: roiSize.w, h: roiSize.h };
+            const xP1Roi = { x: result.xAxis.p1.x - roiW / 2, y: result.xAxis.p1.y + padding, w: roiW, h: roiH };
+            const xP2Roi = { x: result.xAxis.p2.x - roiW / 2, y: result.xAxis.p2.y + padding, w: roiW, h: roiH };
+            const yP1Roi = { x: result.yAxis.p1.x - roiW - padding, y: result.yAxis.p1.y - roiH / 2, w: roiW, h: roiH };
+            const yP2Roi = { x: result.yAxis.p2.x - roiW - padding, y: result.yAxis.p2.y - roiH / 2, w: roiW, h: roiH };
 
             const xMid = (result.xAxis.p1.x + result.xAxis.p2.x) / 2;
-            const xLabelRoi = { x: xMid - 100, y: result.xAxis.p1.y + 35, w: 200, h: 40 };
+            const labelH = Math.round(Math.max(35, imageHeight * 0.05));
+            const labelW = Math.round(Math.max(150, imageWidth * 0.15));
+            const xLabelRoi = { x: xMid - labelW / 2, y: result.xAxis.p1.y + roiH + padding, w: labelW, h: labelH };
 
             const yMid = (result.yAxis.p1.y + result.yAxis.p2.y) / 2;
-            const yLabelRoi = { x: result.yAxis.p1.x - 80, y: yMid - 100, w: 50, h: 200 };
+            const yLabelRoi = { x: result.yAxis.p1.x - roiW - padding, y: yMid - labelW / 2, w: roiH, h: labelW };
 
+            const numWhitelist = '0123456789.eE+\-×^';
+
+            // Single worker shared across all OCR calls for speed
+            const worker = await Tesseract.createWorker('eng');
             const [x1Str, x2Str, y1Str, y2Str, xName, yName] = await Promise.all([
-                recognizeText(workingImageUrl, xP1Roi, { whitelist: '0123456789.-' }),
-                recognizeText(workingImageUrl, xP2Roi, { whitelist: '0123456789.-' }),
-                recognizeText(workingImageUrl, yP1Roi, { whitelist: '0123456789.-' }),
-                recognizeText(workingImageUrl, yP2Roi, { whitelist: '0123456789.-' }),
-                recognizeText(workingImageUrl, xLabelRoi),
-                recognizeText(workingImageUrl, yLabelRoi),
+                recognizeText(workingImageUrl, xP1Roi, { whitelist: numWhitelist, worker }),
+                recognizeText(workingImageUrl, xP2Roi, { whitelist: numWhitelist, worker }),
+                recognizeText(workingImageUrl, yP1Roi, { whitelist: numWhitelist, worker }),
+                recognizeText(workingImageUrl, yP2Roi, { whitelist: numWhitelist, worker }),
+                recognizeText(workingImageUrl, xLabelRoi, { worker }),
+                recognizeText(workingImageUrl, yLabelRoi, { worker }),
             ]);
+            await worker.terminate();
 
-            const parseVal = (s: string) => {
-                const clean = s.replace(/[^0-9.-]/g, '');
-                const n = parseFloat(clean);
-                return isNaN(n) ? NaN : n;
-            };
+            const parseVal = parseAxisValue;
 
             const rotateDetectedPoint = (point: { x: number; y: number }) => rotatePointBetweenAngles(
                 point,
@@ -134,7 +152,8 @@ export const createWorkspaceSlice: StoreSlice<WorkspaceSlice> = (set, get) => ({
                 const newXAxis = { ...ws.xAxis, p1: xP1, p2: xP2, slope: null as number | null, intercept: null as number | null };
                 const newXAxisName = (xName && xName.length > 1) ? xName.replace(/[\n\r]/g, ' ').trim() : ws.xAxisName;
 
-                if (!isNaN(xP1.val) && !isNaN(xP2.val)) {
+                const xValsValid = !isNaN(xP1.val) && !isNaN(xP2.val) && xP1.val !== xP2.val;
+                if (xValsValid) {
                     try {
                         const px1 = xP1.px;
                         let px2 = xP2.px;
@@ -145,6 +164,8 @@ export const createWorkspaceSlice: StoreSlice<WorkspaceSlice> = (set, get) => ({
                     } catch (e) {
                         console.warn("Auto-calibration X failed", e);
                     }
+                } else if (!isNaN(xP1.val) && !isNaN(xP2.val)) {
+                    console.warn("Auto-calibration X skipped: identical values detected", xP1.val, xP2.val);
                 }
 
                 const newYAxes = ws.yAxes.map(y => {
@@ -154,7 +175,8 @@ export const createWorkspaceSlice: StoreSlice<WorkspaceSlice> = (set, get) => ({
                         if (yName && yName.length > 1) {
                             newName = yName.replace(/[\n\r]/g, ' ').trim();
                         }
-                        if (!isNaN(yP1.val) && !isNaN(yP2.val)) {
+                        const yValsValid = !isNaN(yP1.val) && !isNaN(yP2.val) && yP1.val !== yP2.val;
+                        if (yValsValid) {
                             try {
                                 const py1 = yP1.py;
                                 let py2 = yP2.py;
@@ -165,6 +187,8 @@ export const createWorkspaceSlice: StoreSlice<WorkspaceSlice> = (set, get) => ({
                             } catch (e) {
                                 console.warn("Auto-calibration Y failed", e);
                             }
+                        } else if (!isNaN(yP1.val) && !isNaN(yP2.val)) {
+                            console.warn("Auto-calibration Y skipped: identical values detected", yP1.val, yP2.val);
                         }
                         return { ...y, name: newName, calibration: newCalib };
                     }
